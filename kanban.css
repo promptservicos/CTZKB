@@ -1,0 +1,636 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
+    color: #e0e0e0;
+    transition: background 0.2s, color 0.2s;
+    min-height: 100vh;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Header */
+.kanban-header {
+    background: rgba(12, 12, 12, 0.85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(193, 4, 4, 0.3);
+    padding: 0.8rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    z-index: 10;
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.logo-area i {
+    font-size: 1.6rem;
+    color: #c10404;
+}
+
+.logo-area h1 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    color: #ffffff;
+}
+
+.header-actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.btn-icon-text {
+    background: rgba(30, 30, 30, 0.9);
+    border: 1px solid rgba(193, 4, 4, 0.5);
+    color: #c10404;
+    padding: 0.5rem 1rem;
+    border-radius: 40px;
+    font-weight: 500;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+}
+
+.btn-icon-text:hover {
+    background: #c10404;
+    color: white;
+    border-color: #c10404;
+    transform: translateY(-1px);
+}
+
+/* Board horizontal global - único scroll */
+.kanban-board {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 1rem;
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+    flex-wrap: nowrap;
+}
+
+/* Cada departamento é um bloco que não quebra linha */
+.department-block {
+    background: rgba(20, 20, 20, 0.6);
+    border-radius: 24px;
+    border: 1px solid rgba(193, 4, 4, 0.2);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0; /* não encolhe */
+    /* Largura será determinada pelo conteúdo (soma das colunas) */
+    min-width: auto;
+    height: calc(100vh - 100px);
+    overflow: hidden; /* para respeitar bordas arredondadas */
+}
+
+.department-header {
+    padding: 0.8rem;
+    background: linear-gradient(135deg, #1a1a1a, #0f0f0f);
+    border-bottom: 1px solid rgba(193, 4, 4, 0.3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+}
+
+.dept-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.dept-title i {
+    font-size: 1.1rem;
+    color: #c10404;
+}
+
+.dept-title h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.department-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-box i {
+    position: absolute;
+    left: 8px;
+    color: #c10404;
+    font-size: 0.7rem;
+}
+
+.search-input {
+    padding: 0.4rem 0.4rem 0.4rem 1.8rem;
+    background: #252525;
+    border: 1px solid #3a3a3a;
+    border-radius: 40px;
+    color: #fff;
+    font-size: 0.75rem;
+    width: 140px;
+    outline: none;
+}
+
+.sort-select {
+    padding: 0.4rem 0.5rem;
+    background: #252525;
+    border: 1px solid #3a3a3a;
+    border-radius: 40px;
+    color: #fff;
+    font-size: 0.7rem;
+    cursor: pointer;
+}
+
+/* Container das colunas: flex horizontal sem wrap, sem overflow próprio */
+.columns-container {
+    flex: 1;
+    display: flex;
+    gap: 1rem;
+    padding: 0.8rem;
+    overflow: visible; /* nada de scroll aqui */
+    align-items: flex-start;
+}
+
+/* Cada coluna (etapa) */
+.kanban-column {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 16px;
+    border: 1px solid rgba(193, 4, 4, 0.2);
+    display: flex;
+    flex-direction: column;
+    width: 280px; /* largura fixa */
+    flex-shrink: 0;
+    max-height: 100%;
+    overflow: hidden;
+}
+
+.column-header {
+    padding: 0.6rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(193, 4, 4, 0.2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.column-header h3 {
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.column-count {
+    background: #c10404;
+    color: white;
+    border-radius: 40px;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.65rem;
+}
+
+.cards-container {
+    flex: 1;
+    padding: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    overflow-y: auto;
+    min-height: 200px;
+}
+
+/* Cartão (mesmo estilo) */
+.card {
+    background: #202020;
+    border-radius: 14px;
+    border: 1px solid #3a3a3a;
+    transition: all 0.2s;
+    cursor: grab;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.card:active {
+    cursor: grabbing;
+}
+
+.card:hover {
+    border-color: #c10404;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(193,4,4,0.2);
+}
+
+.card-header {
+    padding: 0.6rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card-info {
+    flex: 1;
+}
+
+.card-nome {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #fff;
+}
+
+.card-cpf {
+    font-size: 0.6rem;
+    color: #aaa;
+    margin-top: 0.15rem;
+}
+
+.card-actions {
+    display: flex;
+    gap: 0.3rem;
+}
+
+.move-btn, .delete-card-btn, .expand-btn {
+    background: #2c2c2c;
+    border: none;
+    color: #c10404;
+    width: 26px;
+    height: 26px;
+    border-radius: 26px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+}
+
+.move-btn:hover, .delete-card-btn:hover, .expand-btn:hover {
+    background: #c10404;
+    color: white;
+}
+
+/* Detalhes expandidos */
+.card-details {
+    padding: 0 0.6rem 0.6rem 0.6rem;
+    border-top: 1px solid #3a3a3a;
+    display: none;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.card.expanded .card-details {
+    display: flex;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid rgba(193,4,4,0.2);
+}
+
+.detail-label {
+    color: #aaa;
+}
+
+.detail-value {
+    color: #c10404;
+    font-weight: 500;
+}
+
+/* Edição inline */
+.edit-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+
+.edit-fields input {
+    background: #2c2c2c;
+    border: 1px solid #c10404;
+    border-radius: 14px;
+    padding: 0.3rem 0.6rem;
+    color: white;
+    font-size: 0.7rem;
+}
+
+.edit-actions {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
+.btn-save-edit, .btn-cancel-edit {
+    background: #2c2c2c;
+    border: none;
+    padding: 0.2rem 0.6rem;
+    border-radius: 30px;
+    font-size: 0.65rem;
+    cursor: pointer;
+}
+
+.btn-save-edit {
+    background: #c10404;
+    color: white;
+}
+
+.btn-edit-card {
+    background: #2c2c2c;
+    border: none;
+    border-radius: 30px;
+    padding: 0.3rem;
+    font-size: 0.65rem;
+    cursor: pointer;
+    color: #ccc;
+    margin-top: 0.2rem;
+}
+
+.btn-edit-card:hover {
+    background: #c10404;
+    color: white;
+}
+
+/* Modais (mesmo) */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-card, .confirm-card {
+    background: #1a1a1a;
+    border-radius: 28px;
+    border: 1px solid #c10404;
+    max-width: 420px;
+    width: 90%;
+    padding: 1.2rem;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.modal-header h3 {
+    color: white;
+    font-size: 1.2rem;
+}
+
+.modal-close {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    color: #c10404;
+    cursor: pointer;
+}
+
+.field {
+    margin-bottom: 0.8rem;
+}
+
+.field label {
+    display: block;
+    font-size: 0.7rem;
+    margin-bottom: 0.2rem;
+    color: #ddd;
+}
+
+.input-light {
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    background: #2c2c2c;
+    border: 1px solid #444;
+    border-radius: 20px;
+    color: white;
+    font-size: 0.8rem;
+}
+
+.modal-actions, .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.8rem;
+    margin-top: 1rem;
+}
+
+.btn-primary, .btn-secondary {
+    padding: 0.4rem 1rem;
+    border-radius: 40px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+}
+
+.btn-primary {
+    background: #c10404;
+    color: white;
+}
+
+.btn-secondary {
+    background: #2c2c2c;
+    color: #ddd;
+}
+
+.confirm-icon {
+    font-size: 2rem;
+    color: #c10404;
+    margin-bottom: 0.8rem;
+    text-align: center;
+    display: block;
+}
+
+/* TEMA CLARO */
+body.light-mode {
+    background: linear-gradient(135deg, #f0f0f0, #e0e0e0);
+}
+
+body.light-mode .kanban-header {
+    background: rgba(240,240,240,0.9);
+}
+
+body.light-mode .logo-area h1 {
+    color: #1a1a1a;
+}
+
+body.light-mode .btn-icon-text {
+    background: #f5f5f5;
+    color: #c10404;
+    border-color: #c10404;
+}
+
+body.light-mode .btn-icon-text:hover {
+    background: #c10404;
+    color: white;
+}
+
+body.light-mode .department-block {
+    background: rgba(255,255,255,0.7);
+}
+
+body.light-mode .department-header {
+    background: #eaeaea;
+}
+
+body.light-mode .dept-title h2 {
+    color: #1a1a1a;
+}
+
+body.light-mode .search-input,
+body.light-mode .sort-select {
+    background: white;
+    color: #111;
+    border-color: #ccc;
+}
+
+body.light-mode .kanban-column {
+    background: rgba(0,0,0,0.05);
+}
+
+body.light-mode .column-header {
+    background: rgba(0,0,0,0.1);
+}
+
+body.light-mode .column-header h3 {
+    color: #1a1a1a;
+}
+
+body.light-mode .card {
+    background: white;
+    border-color: #ddd;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+body.light-mode .card-nome {
+    color: #111;
+}
+
+body.light-mode .card-cpf {
+    color: #555;
+}
+
+body.light-mode .move-btn,
+body.light-mode .delete-card-btn,
+body.light-mode .expand-btn,
+body.light-mode .btn-edit-card {
+    background: #f0f0f0;
+    color: #c10404;
+    border: 1px solid #ccc;
+}
+
+body.light-mode .move-btn:hover,
+body.light-mode .delete-card-btn:hover,
+body.light-mode .expand-btn:hover,
+body.light-mode .btn-edit-card:hover {
+    background: #c10404;
+    color: white;
+}
+
+body.light-mode .modal-card,
+body.light-mode .confirm-card {
+    background: white;
+}
+
+body.light-mode .modal-header h3 {
+    color: #111;
+}
+
+body.light-mode .field label {
+    color: #333;
+}
+
+body.light-mode .input-light {
+    background: #f5f5f5;
+    border-color: #ccc;
+    color: #111;
+}
+
+body.light-mode .btn-secondary {
+    background: #e0e0e0;
+    color: #333;
+}
+
+body.light-mode .confirm-card p {
+    color: #111;
+}
+
+/* Loading */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(193,4,4,0.3);
+    border-top-color: #c10404;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Scrollbar geral */
+.kanban-board::-webkit-scrollbar {
+    height: 8px;
+}
+.kanban-board::-webkit-scrollbar-track {
+    background: #2c2c2c;
+    border-radius: 10px;
+}
+.kanban-board::-webkit-scrollbar-thumb {
+    background: #c10404;
+    border-radius: 10px;
+}
+body.light-mode .kanban-board::-webkit-scrollbar-track {
+    background: #ddd;
+}

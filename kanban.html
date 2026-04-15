@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Customiza Kanban | Funcionários</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="kanban.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="kanban-header">
+            <div class="logo-area">
+                <i class="fas fa-columns"></i>
+                <h1>Customiza Kanban</h1>
+            </div>
+            <div class="header-actions">
+                <button id="addEmployeeBtn" class="btn-icon-text"><i class="fas fa-plus"></i> Novo Funcionário</button>
+                <button id="themeToggle" class="btn-icon-text"><i class="fas fa-moon"></i> Tema</button>
+                <button id="logoutKanbanBtn" class="btn-icon-text"><i class="fas fa-sign-out-alt"></i> Sair</button>
+            </div>
+        </header>
+
+        <!-- Board horizontal global: departamentos lado a lado -->
+        <div class="kanban-board" id="kanbanBoard"></div>
+    </div>
+
+    <!-- Modal de adicionar/editar funcionário (sem escolha de etapa) -->
+    <div id="employeeModal" class="modal hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modalTitle">Adicionar funcionário</h3>
+                <button class="modal-close"><i class="fas fa-times"></i></button>
+            </div>
+            <form id="employeeForm">
+                <div class="field">
+                    <label>Nome completo</label>
+                    <input type="text" id="empNome" required class="input-light">
+                </div>
+                <div class="field">
+                    <label>CPF</label>
+                    <input type="text" id="empCpf" class="input-light" placeholder="000.000.000-00" maxlength="14">
+                </div>
+                <div class="field">
+                    <label>Polo</label>
+                    <input type="text" id="empPolo" class="input-light" placeholder="Ex: Polo Industrial">
+                </div>
+                <div class="field">
+                    <label>Data de admissão</label>
+                    <input type="date" id="empAdmissao" class="input-light">
+                </div>
+                <input type="hidden" id="editId" value="">
+                <div class="modal-actions">
+                    <button type="button" id="cancelModalBtn" class="btn-secondary">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de confirmação -->
+    <div id="confirmModal" class="modal hidden">
+        <div class="confirm-card">
+            <i class="fas fa-question-circle confirm-icon"></i>
+            <p id="confirmMessage">Confirmar ação?</p>
+            <div class="confirm-actions">
+                <button id="confirmNo" class="btn-secondary">Não</button>
+                <button id="confirmYes" class="btn-primary">Sim</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <div class="loading-text">Carregando...</div>
+    </div>
+
+    <script type="module" src="kanban.js"></script>
+</body>
+</html>
