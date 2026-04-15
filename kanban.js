@@ -223,7 +223,7 @@ function createCardElement(emp) {
         <div class="card-info">
             <div class="card-nome">${escapeHtml(emp.nome)}</div>
         </div>
-        <div class="card-actions">
+        <div class="card-actions-row">
             <button class="move-btn move-left" ${!hasPrev ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-left"></i></button>
             <button class="move-btn move-right" ${!hasNext ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-right"></i></button>
             <button class="delete-card-btn"><i class="fas fa-trash-alt"></i></button>
