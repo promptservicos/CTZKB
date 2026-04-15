@@ -22,11 +22,11 @@
             </div>
         </header>
 
-        <!-- Board horizontal global: departamentos lado a lado -->
+        <!-- Board horizontal global único -->
         <div class="kanban-board" id="kanbanBoard"></div>
     </div>
 
-    <!-- Modal de adicionar/editar funcionário (sem escolha de etapa) -->
+    <!-- Modal de adicionar/editar funcionário (sem CPF) -->
     <div id="employeeModal" class="modal hidden">
         <div class="modal-card">
             <div class="modal-header">
@@ -39,16 +39,30 @@
                     <input type="text" id="empNome" required class="input-light">
                 </div>
                 <div class="field">
-                    <label>CPF</label>
-                    <input type="text" id="empCpf" class="input-light" placeholder="000.000.000-00" maxlength="14">
-                </div>
-                <div class="field">
                     <label>Polo</label>
                     <input type="text" id="empPolo" class="input-light" placeholder="Ex: Polo Industrial">
                 </div>
                 <div class="field">
                     <label>Data de admissão</label>
                     <input type="date" id="empAdmissao" class="input-light">
+                </div>
+                <div class="field">
+                    <label>Turno</label>
+                    <select id="empTurno" class="input-light">
+                        <option value="">Selecione</option>
+                        <option value="Manhã">Manhã</option>
+                        <option value="Tarde">Tarde</option>
+                        <option value="Noite">Noite</option>
+                        <option value="Integral">Integral</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Início do expediente</label>
+                    <input type="time" id="empInicio" class="input-light">
+                </div>
+                <div class="field">
+                    <label>Término do expediente</label>
+                    <input type="time" id="empFim" class="input-light">
                 </div>
                 <input type="hidden" id="editId" value="">
                 <div class="modal-actions">

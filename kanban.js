@@ -11,8 +11,7 @@ import {
     setDoc, 
     deleteDoc, 
     onSnapshot, 
-    query, 
-    orderBy 
+    query 
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // Configuração do Firebase
@@ -26,52 +25,23 @@ const firebaseConfig = {
     measurementId: "G-41TV2VHHH8"
 };
 
-// Inicializar Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// Referência à coleção "employees" (será criada automaticamente)
 const employeesCollection = collection(db, "employees");
 
-// Definição dos departamentos e etapas (nomes atualizados)
+// Definição dos departamentos e etapas
 const departments = {
-    0: { 
-        name: "Recrutamento", 
-        icon: "fas fa-users", 
-        stages: [
-            "Formulário de dados",
-            "Envio para CTZ",
-            "Aprovação CTZ",
-            "Aprovação CBI"
-        ]
-    },
-    1: { 
-        name: "Departamento Pessoal", 
-        icon: "fas fa-file-alt", 
-        stages: [
-            "Recebimento de RP",
-            "Receber Documentação",
-            "Exame médico",
-            "Assinatura de doc",
-            "Envio CTZ DOC"
-        ]
-    },
-    2: { 
-        name: "Customiza", 
-        icon: "fas fa-briefcase", 
-        stages: [
-            "Aprovação CTZ",
-            "Integração CTZ"
-        ]
-    }
+    0: { name: "Recrutamento", icon: "fas fa-users", stages: ["Formulário de dados", "Envio para CTZ", "Aprovação CTZ", "Aprovação CBI"] },
+    1: { name: "Departamento Pessoal", icon: "fas fa-file-alt", stages: ["Recebimento de RP", "Receber Documentação", "Exame médico", "Assinatura de doc", "Envio CTZ DOC"] },
+    2: { name: "Customiza", icon: "fas fa-briefcase", stages: ["Aprovação CTZ", "Integração CTZ"] }
 };
 
-let employees = [];          // cache local
+let employees = [];
 let unsubscribeSnapshot = null;
 let currentConfirmCallback = null;
 
-// DOM elements
+// DOM
 const addBtn = document.getElementById('addEmployeeBtn');
 const logoutBtn = document.getElementById('logoutKanbanBtn');
 const themeToggle = document.getElementById('themeToggle');
@@ -88,24 +58,14 @@ const cancelModalBtn = document.getElementById('cancelModalBtn');
 const modalClose = document.querySelector('.modal-close');
 const kanbanBoard = document.getElementById('kanbanBoard');
 
-// Máscara CPF
-function applyCpfMask(value) {
-    return value.replace(/\D/g, '')
-        .replace(/(\d{3})(\d)/, '$1.$2')
-        .replace(/(\d{3})(\d)/, '$1.$2')
-        .replace(/(\d{3})(\d{1,2})/, '$1-$2')
-        .replace(/(-\d{2})\d+?$/, '$1');
-}
-function setupCpfMask(el) {
-    el.addEventListener('input', (e) => {
-        e.target.value = applyCpfMask(e.target.value);
-    });
-}
-setupCpfMask(document.getElementById('empCpf'));
-
 function setLoading(show) {
     if (show) loadingOverlay.classList.remove('hidden');
     else loadingOverlay.classList.add('hidden');
+}
+
+function showError(msg) {
+    alert(msg);
+    console.error(msg);
 }
 
 function formatDateTime(isoString) {
@@ -114,9 +74,9 @@ function formatDateTime(isoString) {
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
-// ------------------- FIRESTORE OPERATIONS -------------------
+// Firestore operations
 async function addEmployeeToFirestore(employeeData) {
-    const newId = Date.now().toString(); // ou use doc().id
+    const newId = Date.now().toString();
     const docRef = doc(employeesCollection, newId);
     await setDoc(docRef, { ...employeeData, id: newId });
 }
@@ -131,25 +91,21 @@ async function deleteEmployeeFromFirestore(id) {
     await deleteDoc(docRef);
 }
 
-// Inicializa o listener em tempo real
 function subscribeToEmployees() {
     if (unsubscribeSnapshot) unsubscribeSnapshot();
     const q = query(employeesCollection);
     unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
         employees = [];
-        snapshot.forEach(doc => {
-            employees.push(doc.data());
-        });
-        // Ordenar opcionalmente
+        snapshot.forEach(doc => employees.push(doc.data()));
         employees.sort((a,b) => a.id - b.id);
-        renderAllCards();   // recria todos os cartões com os novos dados
+        renderAllCards();
     }, (error) => {
         console.error("Erro no Firestore:", error);
-        showLoginError("Erro ao carregar dados. Verifique sua conexão.");
+        showError("Erro ao carregar dados. Verifique as regras do Firestore.");
     });
 }
 
-// ------------------- RENDERIZAÇÃO DO BOARD -------------------
+// Renderização do board (departamentos e colunas)
 function renderBoard() {
     kanbanBoard.innerHTML = '';
     for (let deptId = 0; deptId <= 2; deptId++) {
@@ -157,7 +113,6 @@ function renderBoard() {
         const block = document.createElement('div');
         block.className = 'department-block';
         block.dataset.department = deptId;
-        
         const header = document.createElement('div');
         header.className = 'department-header';
         header.innerHTML = `
@@ -181,37 +136,27 @@ function renderBoard() {
             </div>
         `;
         block.appendChild(header);
-        
         const columnsContainer = document.createElement('div');
         columnsContainer.className = 'columns-container';
-        
         dept.stages.forEach((stageName, stageIdx) => {
             const column = document.createElement('div');
             column.className = 'kanban-column';
             column.dataset.dept = deptId;
             column.dataset.substage = stageIdx;
-            
             const colHeader = document.createElement('div');
             colHeader.className = 'column-header';
-            colHeader.innerHTML = `
-                <h3>${stageName}</h3>
-                <span class="column-count" id="count-${deptId}-${stageIdx}">0</span>
-            `;
+            colHeader.innerHTML = `<h3>${stageName}</h3><span class="column-count" id="count-${deptId}-${stageIdx}">0</span>`;
             column.appendChild(colHeader);
-            
             const cardsContainer = document.createElement('div');
             cardsContainer.className = 'cards-container';
             cardsContainer.id = `container-${deptId}-${stageIdx}`;
             column.appendChild(cardsContainer);
-            
             columnsContainer.appendChild(column);
         });
-        
         block.appendChild(columnsContainer);
         kanbanBoard.appendChild(block);
     }
-    
-    renderAllCards();  // preenche com os dados atuais de 'employees'
+    renderAllCards();
     attachEvents();
     attachDragAndDrop();
 }
@@ -220,11 +165,7 @@ function getFilteredAndSorted(deptId, searchTerm, sortType) {
     let filtered = employees.filter(e => e.departamento === deptId);
     if (searchTerm) {
         const term = searchTerm.toLowerCase();
-        filtered = filtered.filter(e =>
-            e.nome.toLowerCase().includes(term) ||
-            (e.cpf && e.cpf.includes(term)) ||
-            (e.polo && e.polo.toLowerCase().includes(term))
-        );
+        filtered = filtered.filter(e => e.nome.toLowerCase().includes(term) || (e.polo && e.polo.toLowerCase().includes(term)));
     }
     switch(sortType) {
         case 'nome_asc': filtered.sort((a,b) => a.nome.localeCompare(b.nome)); break;
@@ -239,7 +180,6 @@ function getFilteredAndSorted(deptId, searchTerm, sortType) {
 }
 
 function renderAllCards() {
-    // Limpar contadores e containers
     for (let deptId = 0; deptId <= 2; deptId++) {
         const stagesCount = departments[deptId].stages.length;
         for (let s = 0; s < stagesCount; s++) {
@@ -249,54 +189,39 @@ function renderAllCards() {
             if (badge) badge.innerText = '0';
         }
     }
-    
     for (let deptId = 0; deptId <= 2; deptId++) {
         const searchInput = document.querySelector(`.search-input[data-dept="${deptId}"]`);
         const sortSelect = document.querySelector(`.sort-select[data-dept="${deptId}"]`);
         const searchTerm = searchInput ? searchInput.value : '';
         const sortType = sortSelect ? sortSelect.value : 'nome_asc';
         const filteredList = getFilteredAndSorted(deptId, searchTerm, sortType);
-        
         const grouped = {};
-        filteredList.forEach(emp => {
-            if (!grouped[emp.subEtapa]) grouped[emp.subEtapa] = [];
-            grouped[emp.subEtapa].push(emp);
-        });
-        
+        filteredList.forEach(emp => { if (!grouped[emp.subEtapa]) grouped[emp.subEtapa] = []; grouped[emp.subEtapa].push(emp); });
         const stagesCount = departments[deptId].stages.length;
         for (let s = 0; s < stagesCount; s++) {
             const container = document.getElementById(`container-${deptId}-${s}`);
             const badge = document.getElementById(`count-${deptId}-${s}`);
             if (badge) badge.innerText = (grouped[s] || []).length;
-            if (container && grouped[s]) {
-                grouped[s].forEach(emp => {
-                    const card = createCardElement(emp);
-                    container.appendChild(card);
-                });
-            }
+            if (container && grouped[s]) grouped[s].forEach(emp => container.appendChild(createCardElement(emp)));
         }
     }
     attachDragAndDrop();
 }
 
-// Criação do cartão (igual, mas chama funções do Firestore nas ações)
 function createCardElement(emp) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
     cardDiv.dataset.id = emp.id;
     let expanded = false;
-    
     const currentDept = emp.departamento;
     const currentStage = emp.subEtapa;
     const hasPrev = !(currentDept === 0 && currentStage === 0);
     const hasNext = !(currentDept === 2 && currentStage === departments[2].stages.length - 1);
-    
     const header = document.createElement('div');
     header.className = 'card-header';
     header.innerHTML = `
         <div class="card-info">
             <div class="card-nome">${escapeHtml(emp.nome)}</div>
-            <div class="card-cpf">${emp.cpf || '—'}</div>
         </div>
         <div class="card-actions">
             <button class="move-btn move-left" ${!hasPrev ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-left"></i></button>
@@ -306,19 +231,28 @@ function createCardElement(emp) {
         </div>
     `;
     cardDiv.appendChild(header);
-    
     const details = document.createElement('div');
     details.className = 'card-details';
     details.innerHTML = `
         <div class="detail-row"><span class="detail-label">Polo</span><span class="detail-value">${escapeHtml(emp.polo || '—')}</span></div>
         <div class="detail-row"><span class="detail-label">Admissão</span><span class="detail-value">${emp.dataAdmissao || '—'}</span></div>
+        <div class="detail-row"><span class="detail-label">Turno</span><span class="detail-value">${emp.turno || '—'}</span></div>
+        <div class="detail-row"><span class="detail-label">Expediente</span><span class="detail-value">${emp.inicioExpediente || '—'} às ${emp.fimExpediente || '—'}</span></div>
         <div class="detail-row"><span class="detail-label">Criado em</span><span class="detail-value">${formatDateTime(emp.dataCriacao)}</span></div>
         <div class="detail-row"><span class="detail-label">Última movimentação</span><span class="detail-value">${formatDateTime(emp.ultimaMovimentacao)}</span></div>
         <div class="edit-fields" style="display: none;">
             <input type="text" class="edit-nome" value="${escapeHtml(emp.nome)}">
-            <input type="text" class="edit-cpf" value="${emp.cpf || ''}" maxlength="14">
             <input type="text" class="edit-polo" value="${escapeHtml(emp.polo || '')}">
             <input type="date" class="edit-admissao" value="${emp.dataAdmissao || ''}">
+            <select class="edit-turno">
+                <option value="">Selecione</option>
+                <option value="Manhã" ${emp.turno === 'Manhã' ? 'selected' : ''}>Manhã</option>
+                <option value="Tarde" ${emp.turno === 'Tarde' ? 'selected' : ''}>Tarde</option>
+                <option value="Noite" ${emp.turno === 'Noite' ? 'selected' : ''}>Noite</option>
+                <option value="Integral" ${emp.turno === 'Integral' ? 'selected' : ''}>Integral</option>
+            </select>
+            <input type="time" class="edit-inicio" value="${emp.inicioExpediente || ''}" placeholder="Início">
+            <input type="time" class="edit-fim" value="${emp.fimExpediente || ''}" placeholder="Término">
             <div class="edit-actions">
                 <button class="btn-save-edit">Salvar</button>
                 <button class="btn-cancel-edit">Cancelar</button>
@@ -327,124 +261,62 @@ function createCardElement(emp) {
         <button class="btn-edit-card">✎ Editar</button>
     `;
     cardDiv.appendChild(details);
-    
-    const editCpf = details.querySelector('.edit-cpf');
-    if (editCpf) setupCpfMask(editCpf);
-    
-    // Eventos
+
     const expandBtn = header.querySelector('.expand-btn');
-    expandBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        expanded = !expanded;
-        if (expanded) cardDiv.classList.add('expanded');
-        else cardDiv.classList.remove('expanded');
-    });
-    
+    expandBtn.addEventListener('click', (e) => { e.stopPropagation(); expanded = !expanded; if (expanded) cardDiv.classList.add('expanded'); else cardDiv.classList.remove('expanded'); });
     const moveLeft = header.querySelector('.move-left');
     const moveRight = header.querySelector('.move-right');
-    
     if (moveLeft) moveLeft.addEventListener('click', (e) => {
         e.stopPropagation();
-        let newDept = currentDept;
-        let newStage = currentStage - 1;
-        if (newStage < 0) {
-            if (currentDept > 0) {
-                newDept = currentDept - 1;
-                newStage = departments[newDept].stages.length - 1;
-            } else return;
-        }
+        let newDept = currentDept, newStage = currentStage - 1;
+        if (newStage < 0) { if (currentDept > 0) { newDept = currentDept - 1; newStage = departments[newDept].stages.length - 1; } else return; }
         const targetStageName = departments[newDept].stages[newStage];
         showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, async () => {
-            emp.departamento = newDept;
-            emp.subEtapa = newStage;
-            emp.ultimaMovimentacao = new Date().toISOString();
+            emp.departamento = newDept; emp.subEtapa = newStage; emp.ultimaMovimentacao = new Date().toISOString();
             await updateEmployeeInFirestore(emp.id, emp);
         });
     });
-    
     if (moveRight) moveRight.addEventListener('click', (e) => {
         e.stopPropagation();
-        let newDept = currentDept;
-        let newStage = currentStage + 1;
-        if (newStage >= departments[currentDept].stages.length) {
-            if (currentDept < 2) {
-                newDept = currentDept + 1;
-                newStage = 0;
-            } else return;
-        }
+        let newDept = currentDept, newStage = currentStage + 1;
+        if (newStage >= departments[currentDept].stages.length) { if (currentDept < 2) { newDept = currentDept + 1; newStage = 0; } else return; }
         const targetStageName = departments[newDept].stages[newStage];
         showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, async () => {
-            emp.departamento = newDept;
-            emp.subEtapa = newStage;
-            emp.ultimaMovimentacao = new Date().toISOString();
+            emp.departamento = newDept; emp.subEtapa = newStage; emp.ultimaMovimentacao = new Date().toISOString();
             await updateEmployeeInFirestore(emp.id, emp);
         });
     });
-    
     const deleteBtn = header.querySelector('.delete-card-btn');
-    deleteBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        showConfirm(`Remover "${emp.nome}" permanentemente?`, async () => {
-            await deleteEmployeeFromFirestore(emp.id);
-        });
-    });
-    
+    deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); showConfirm(`Remover "${emp.nome}" permanentemente?`, async () => await deleteEmployeeFromFirestore(emp.id)); });
     const editBtn = details.querySelector('.btn-edit-card');
     const editFieldsDiv = details.querySelector('.edit-fields');
     const saveEdit = editFieldsDiv.querySelector('.btn-save-edit');
     const cancelEdit = editFieldsDiv.querySelector('.btn-cancel-edit');
-    
-    editBtn.addEventListener('click', () => {
-        editFieldsDiv.style.display = 'flex';
-        editBtn.style.display = 'none';
-        editFieldsDiv.querySelector('.edit-nome').value = emp.nome;
-        editFieldsDiv.querySelector('.edit-cpf').value = emp.cpf || '';
-        editFieldsDiv.querySelector('.edit-polo').value = emp.polo || '';
-        editFieldsDiv.querySelector('.edit-admissao').value = emp.dataAdmissao || '';
-    });
-    
+    editBtn.addEventListener('click', () => { editFieldsDiv.style.display = 'flex'; editBtn.style.display = 'none'; });
     saveEdit.addEventListener('click', async () => {
         const newNome = editFieldsDiv.querySelector('.edit-nome').value.trim();
         if (!newNome) return;
         emp.nome = newNome;
-        emp.cpf = editFieldsDiv.querySelector('.edit-cpf').value;
         emp.polo = editFieldsDiv.querySelector('.edit-polo').value;
         emp.dataAdmissao = editFieldsDiv.querySelector('.edit-admissao').value;
+        emp.turno = editFieldsDiv.querySelector('.edit-turno').value;
+        emp.inicioExpediente = editFieldsDiv.querySelector('.edit-inicio').value;
+        emp.fimExpediente = editFieldsDiv.querySelector('.edit-fim').value;
         await updateEmployeeInFirestore(emp.id, emp);
     });
-    
-    cancelEdit.addEventListener('click', () => {
-        editFieldsDiv.style.display = 'none';
-        editBtn.style.display = 'block';
-    });
-    
+    cancelEdit.addEventListener('click', () => { editFieldsDiv.style.display = 'none'; editBtn.style.display = 'block'; });
     return cardDiv;
 }
 
-// Drag & drop global
+// Drag & drop
 function attachDragAndDrop() {
     const cards = document.querySelectorAll('.card');
-    cards.forEach(card => {
-        card.setAttribute('draggable', 'true');
-        card.removeEventListener('dragstart', dragStart);
-        card.removeEventListener('dragend', dragEnd);
-        card.addEventListener('dragstart', dragStart);
-        card.addEventListener('dragend', dragEnd);
-    });
+    cards.forEach(card => { card.setAttribute('draggable', 'true'); card.removeEventListener('dragstart', dragStart); card.removeEventListener('dragend', dragEnd); card.addEventListener('dragstart', dragStart); card.addEventListener('dragend', dragEnd); });
     const containers = document.querySelectorAll('.cards-container');
-    containers.forEach(container => {
-        container.removeEventListener('dragover', dragOver);
-        container.removeEventListener('drop', drop);
-        container.addEventListener('dragover', dragOver);
-        container.addEventListener('drop', drop);
-    });
+    containers.forEach(container => { container.removeEventListener('dragover', dragOver); container.removeEventListener('drop', drop); container.addEventListener('dragover', dragOver); container.addEventListener('drop', drop); });
 }
-
 let draggedId = null;
-function dragStart(e) {
-    draggedId = e.target.closest('.card').dataset.id;
-    e.dataTransfer.setData('text/plain', draggedId);
-}
+function dragStart(e) { draggedId = e.target.closest('.card').dataset.id; e.dataTransfer.setData('text/plain', draggedId); }
 function dragEnd() { draggedId = null; }
 function dragOver(e) { e.preventDefault(); }
 function drop(e) {
@@ -458,34 +330,28 @@ function drop(e) {
     if (emp && (emp.departamento !== targetDept || emp.subEtapa !== targetSub)) {
         const targetStageName = departments[targetDept].stages[targetSub];
         showConfirm(`Mover "${emp.nome}" para ${departments[targetDept].name} → ${targetStageName}?`, async () => {
-            emp.departamento = targetDept;
-            emp.subEtapa = targetSub;
-            emp.ultimaMovimentacao = new Date().toISOString();
+            emp.departamento = targetDept; emp.subEtapa = targetSub; emp.ultimaMovimentacao = new Date().toISOString();
             await updateEmployeeInFirestore(emp.id, emp);
         });
     }
 }
 
 function attachEvents() {
-    document.querySelectorAll('.search-input').forEach(input => {
-        input.removeEventListener('input', renderAllCards);
-        input.addEventListener('input', renderAllCards);
-    });
-    document.querySelectorAll('.sort-select').forEach(select => {
-        select.removeEventListener('change', renderAllCards);
-        select.addEventListener('change', renderAllCards);
-    });
+    document.querySelectorAll('.search-input').forEach(input => { input.removeEventListener('input', renderAllCards); input.addEventListener('input', renderAllCards); });
+    document.querySelectorAll('.sort-select').forEach(select => { select.removeEventListener('change', renderAllCards); select.addEventListener('change', renderAllCards); });
 }
 
-// Modal de adicionar/editar (sem departamento/etapa – sempre Recrutamento etapa 0)
+// Modal de criação/edição
 function openEmployeeModal(employee = null) {
     if (employee) {
         modalTitle.innerText = 'Editar funcionário';
         editId.value = employee.id;
         document.getElementById('empNome').value = employee.nome;
-        document.getElementById('empCpf').value = employee.cpf || '';
         document.getElementById('empPolo').value = employee.polo || '';
         document.getElementById('empAdmissao').value = employee.dataAdmissao || '';
+        document.getElementById('empTurno').value = employee.turno || '';
+        document.getElementById('empInicio').value = employee.inicioExpediente || '';
+        document.getElementById('empFim').value = employee.fimExpediente || '';
     } else {
         modalTitle.innerText = 'Adicionar funcionário';
         editId.value = '';
@@ -498,30 +364,29 @@ employeeForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const nome = document.getElementById('empNome').value.trim();
     if (!nome) return;
-    let cpf = applyCpfMask(document.getElementById('empCpf').value);
     const polo = document.getElementById('empPolo').value;
     const admissao = document.getElementById('empAdmissao').value;
+    const turno = document.getElementById('empTurno').value;
+    const inicio = document.getElementById('empInicio').value;
+    const fim = document.getElementById('empFim').value;
     const idEdit = editId.value;
-    
     if (idEdit) {
         const idx = employees.findIndex(e => e.id == idEdit);
         if (idx !== -1) {
             const emp = employees[idx];
             emp.nome = nome;
-            emp.cpf = cpf;
             emp.polo = polo;
             emp.dataAdmissao = admissao;
+            emp.turno = turno;
+            emp.inicioExpediente = inicio;
+            emp.fimExpediente = fim;
             await updateEmployeeInFirestore(emp.id, emp);
         }
     } else {
         const newEmployee = {
             id: Date.now().toString(),
-            nome: nome,
-            cpf: cpf,
-            polo: polo,
-            dataAdmissao: admissao,
-            departamento: 0,
-            subEtapa: 0,
+            nome, polo, dataAdmissao: admissao, turno, inicioExpediente: inicio, fimExpediente: fim,
+            departamento: 0, subEtapa: 0,
             dataCriacao: new Date().toISOString(),
             ultimaMovimentacao: new Date().toISOString()
         };
@@ -539,25 +404,14 @@ function showConfirm(msg, onConfirm) {
     confirmModal.classList.remove('hidden');
     currentConfirmCallback = onConfirm;
 }
-confirmYesBtn.addEventListener('click', () => {
-    confirmModal.classList.add('hidden');
-    if (currentConfirmCallback) currentConfirmCallback();
-    currentConfirmCallback = null;
-});
-confirmNoBtn.addEventListener('click', () => {
-    confirmModal.classList.add('hidden');
-    currentConfirmCallback = null;
-});
+confirmYesBtn.addEventListener('click', () => { confirmModal.classList.add('hidden'); if (currentConfirmCallback) currentConfirmCallback(); currentConfirmCallback = null; });
+confirmNoBtn.addEventListener('click', () => { confirmModal.classList.add('hidden'); currentConfirmCallback = null; });
 
-// Tema claro/escuro
+// Tema
 function initTheme() {
     const saved = localStorage.getItem('theme');
-    if (saved === 'light') {
-        document.body.classList.add('light-mode');
-        themeToggle.innerHTML = '<i class="fas fa-sun"></i> Tema';
-    } else {
-        themeToggle.innerHTML = '<i class="fas fa-moon"></i> Tema';
-    }
+    if (saved === 'light') { document.body.classList.add('light-mode'); themeToggle.innerHTML = '<i class="fas fa-sun"></i> Tema'; }
+    else { themeToggle.innerHTML = '<i class="fas fa-moon"></i> Tema'; }
 }
 themeToggle.addEventListener('click', () => {
     document.body.classList.toggle('light-mode');
@@ -566,33 +420,20 @@ themeToggle.addEventListener('click', () => {
     themeToggle.innerHTML = isLight ? '<i class="fas fa-sun"></i> Tema' : '<i class="fas fa-moon"></i> Tema';
 });
 
-// Autenticação e inicialização
 function checkAuth() {
     setLoading(true);
     onAuthStateChanged(auth, (user) => {
         setLoading(false);
-        if (!user) {
-            window.location.href = 'index.html';
-        } else {
-            // Usuário logado: monta o board e escuta o Firestore
-            renderBoard();
-            subscribeToEmployees(); // começa a escutar mudanças
-        }
+        if (!user) window.location.href = 'index.html';
+        else { renderBoard(); subscribeToEmployees(); }
     });
 }
-
-logoutBtn.addEventListener('click', async () => {
-    setLoading(true);
-    await signOut(auth);
-    if (unsubscribeSnapshot) unsubscribeSnapshot();
-    window.location.href = 'index.html';
-});
+logoutBtn.addEventListener('click', async () => { setLoading(true); await signOut(auth); if (unsubscribeSnapshot) unsubscribeSnapshot(); window.location.href = 'index.html'; });
 
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;');
 }
 
-// Inicialização
 initTheme();
 checkAuth();

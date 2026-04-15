@@ -19,7 +19,6 @@ body {
     overflow: hidden;
 }
 
-/* Header */
 .kanban-header {
     background: rgba(12, 12, 12, 0.85);
     backdrop-filter: blur(8px);
@@ -78,7 +77,6 @@ body {
     transform: translateY(-1px);
 }
 
-/* Board horizontal global - único scroll */
 .kanban-board {
     flex: 1;
     overflow-x: auto;
@@ -90,18 +88,15 @@ body {
     flex-wrap: nowrap;
 }
 
-/* Cada departamento é um bloco que não quebra linha */
 .department-block {
     background: rgba(20, 20, 20, 0.6);
     border-radius: 24px;
     border: 1px solid rgba(193, 4, 4, 0.2);
     display: flex;
     flex-direction: column;
-    flex-shrink: 0; /* não encolhe */
-    /* Largura será determinada pelo conteúdo (soma das colunas) */
-    min-width: auto;
+    flex-shrink: 0;
     height: calc(100vh - 100px);
-    overflow: hidden; /* para respeitar bordas arredondadas */
+    overflow: hidden;
 }
 
 .department-header {
@@ -171,24 +166,22 @@ body {
     cursor: pointer;
 }
 
-/* Container das colunas: flex horizontal sem wrap, sem overflow próprio */
 .columns-container {
     flex: 1;
     display: flex;
     gap: 1rem;
     padding: 0.8rem;
-    overflow: visible; /* nada de scroll aqui */
+    overflow: visible;
     align-items: flex-start;
 }
 
-/* Cada coluna (etapa) */
 .kanban-column {
     background: rgba(0, 0, 0, 0.2);
     border-radius: 16px;
     border: 1px solid rgba(193, 4, 4, 0.2);
     display: flex;
     flex-direction: column;
-    width: 280px; /* largura fixa */
+    width: 280px;
     flex-shrink: 0;
     max-height: 100%;
     overflow: hidden;
@@ -226,7 +219,6 @@ body {
     min-height: 200px;
 }
 
-/* Cartão (mesmo estilo) */
 .card {
     background: #202020;
     border-radius: 14px;
@@ -263,12 +255,6 @@ body {
     color: #fff;
 }
 
-.card-cpf {
-    font-size: 0.6rem;
-    color: #aaa;
-    margin-top: 0.15rem;
-}
-
 .card-actions {
     display: flex;
     gap: 0.3rem;
@@ -294,7 +280,6 @@ body {
     color: white;
 }
 
-/* Detalhes expandidos */
 .card-details {
     padding: 0 0.6rem 0.6rem 0.6rem;
     border-top: 1px solid #3a3a3a;
@@ -324,7 +309,6 @@ body {
     font-weight: 500;
 }
 
-/* Edição inline */
 .edit-fields {
     display: flex;
     flex-direction: column;
@@ -332,7 +316,7 @@ body {
     margin-top: 0.4rem;
 }
 
-.edit-fields input {
+.edit-fields input, .edit-fields select {
     background: #2c2c2c;
     border: 1px solid #c10404;
     border-radius: 14px;
@@ -377,7 +361,6 @@ body {
     color: white;
 }
 
-/* Modais (mesmo) */
 .modal {
     position: fixed;
     top: 0;
@@ -475,7 +458,6 @@ body {
     display: block;
 }
 
-/* TEMA CLARO */
 body.light-mode {
     background: linear-gradient(135deg, #f0f0f0, #e0e0e0);
 }
@@ -540,10 +522,6 @@ body.light-mode .card-nome {
     color: #111;
 }
 
-body.light-mode .card-cpf {
-    color: #555;
-}
-
 body.light-mode .move-btn,
 body.light-mode .delete-card-btn,
 body.light-mode .expand-btn,
@@ -589,7 +567,6 @@ body.light-mode .confirm-card p {
     color: #111;
 }
 
-/* Loading */
 .loading-overlay {
     position: fixed;
     top: 0;
@@ -619,7 +596,6 @@ body.light-mode .confirm-card p {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Scrollbar geral */
 .kanban-board::-webkit-scrollbar {
     height: 8px;
 }
