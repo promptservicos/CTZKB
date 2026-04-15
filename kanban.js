@@ -1,6 +1,21 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { 
+    getAuth, 
+    onAuthStateChanged, 
+    signOut 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { 
+    getFirestore, 
+    collection, 
+    doc, 
+    setDoc, 
+    deleteDoc, 
+    onSnapshot, 
+    query, 
+    orderBy 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+// Configuração do Firebase
 const firebaseConfig = {
     apiKey: "AIzaSyCY1CffzfAdazxL1_SrDNFq0-cVXOr4jWQ",
     authDomain: "customizakb.firebaseapp.com",
@@ -11,10 +26,15 @@ const firebaseConfig = {
     measurementId: "G-41TV2VHHH8"
 };
 
+// Inicializar Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 
-// Configuração dos departamentos e etapas (nomes atualizados)
+// Referência à coleção "employees" (será criada automaticamente)
+const employeesCollection = collection(db, "employees");
+
+// Definição dos departamentos e etapas (nomes atualizados)
 const departments = {
     0: { 
         name: "Recrutamento", 
@@ -47,10 +67,11 @@ const departments = {
     }
 };
 
-let employees = [];
+let employees = [];          // cache local
+let unsubscribeSnapshot = null;
 let currentConfirmCallback = null;
 
-// DOM
+// DOM elements
 const addBtn = document.getElementById('addEmployeeBtn');
 const logoutBtn = document.getElementById('logoutKanbanBtn');
 const themeToggle = document.getElementById('themeToggle');
@@ -87,36 +108,48 @@ function setLoading(show) {
     else loadingOverlay.classList.add('hidden');
 }
 
-function saveToLocalStorage() {
-    localStorage.setItem('kanban_employees', JSON.stringify(employees));
-}
-
 function formatDateTime(isoString) {
     if (!isoString) return '—';
     const d = new Date(isoString);
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
-function loadInitialData() {
-    const stored = localStorage.getItem('kanban_employees');
-    if (stored) {
-        employees = JSON.parse(stored);
-        employees.forEach(emp => {
-            if (!emp.dataCriacao) emp.dataCriacao = new Date().toISOString();
-            if (!emp.ultimaMovimentacao) emp.ultimaMovimentacao = emp.dataCriacao;
-            if (emp.departamento === undefined) emp.departamento = 0;
-            if (emp.subEtapa === undefined) emp.subEtapa = 0;
-        });
-    } else {
-        employees = [
-            { id: Date.now()+1, nome: "Ana Silva", cpf: "123.456.789-00", polo: "Zona Sul", dataAdmissao: "2023-05-10", departamento: 0, subEtapa: 0, dataCriacao: new Date().toISOString(), ultimaMovimentacao: new Date().toISOString() },
-            { id: Date.now()+2, nome: "Carlos Menezes", cpf: "987.654.321-00", polo: "Centro", dataAdmissao: "2024-01-20", departamento: 1, subEtapa: 2, dataCriacao: new Date().toISOString(), ultimaMovimentacao: new Date().toISOString() }
-        ];
-        saveToLocalStorage();
-    }
-    renderBoard();
+// ------------------- FIRESTORE OPERATIONS -------------------
+async function addEmployeeToFirestore(employeeData) {
+    const newId = Date.now().toString(); // ou use doc().id
+    const docRef = doc(employeesCollection, newId);
+    await setDoc(docRef, { ...employeeData, id: newId });
 }
 
+async function updateEmployeeInFirestore(id, updatedData) {
+    const docRef = doc(employeesCollection, id);
+    await setDoc(docRef, updatedData, { merge: true });
+}
+
+async function deleteEmployeeFromFirestore(id) {
+    const docRef = doc(employeesCollection, id);
+    await deleteDoc(docRef);
+}
+
+// Inicializa o listener em tempo real
+function subscribeToEmployees() {
+    if (unsubscribeSnapshot) unsubscribeSnapshot();
+    const q = query(employeesCollection);
+    unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+        employees = [];
+        snapshot.forEach(doc => {
+            employees.push(doc.data());
+        });
+        // Ordenar opcionalmente
+        employees.sort((a,b) => a.id - b.id);
+        renderAllCards();   // recria todos os cartões com os novos dados
+    }, (error) => {
+        console.error("Erro no Firestore:", error);
+        showLoginError("Erro ao carregar dados. Verifique sua conexão.");
+    });
+}
+
+// ------------------- RENDERIZAÇÃO DO BOARD -------------------
 function renderBoard() {
     kanbanBoard.innerHTML = '';
     for (let deptId = 0; deptId <= 2; deptId++) {
@@ -178,7 +211,7 @@ function renderBoard() {
         kanbanBoard.appendChild(block);
     }
     
-    renderAllCards();
+    renderAllCards();  // preenche com os dados atuais de 'employees'
     attachEvents();
     attachDragAndDrop();
 }
@@ -206,6 +239,7 @@ function getFilteredAndSorted(deptId, searchTerm, sortType) {
 }
 
 function renderAllCards() {
+    // Limpar contadores e containers
     for (let deptId = 0; deptId <= 2; deptId++) {
         const stagesCount = departments[deptId].stages.length;
         for (let s = 0; s < stagesCount; s++) {
@@ -245,6 +279,7 @@ function renderAllCards() {
     attachDragAndDrop();
 }
 
+// Criação do cartão (igual, mas chama funções do Firestore nas ações)
 function createCardElement(emp) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
@@ -319,12 +354,11 @@ function createCardElement(emp) {
             } else return;
         }
         const targetStageName = departments[newDept].stages[newStage];
-        showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, () => {
+        showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, async () => {
             emp.departamento = newDept;
             emp.subEtapa = newStage;
             emp.ultimaMovimentacao = new Date().toISOString();
-            saveToLocalStorage();
-            renderAllCards();
+            await updateEmployeeInFirestore(emp.id, emp);
         });
     });
     
@@ -339,22 +373,19 @@ function createCardElement(emp) {
             } else return;
         }
         const targetStageName = departments[newDept].stages[newStage];
-        showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, () => {
+        showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, async () => {
             emp.departamento = newDept;
             emp.subEtapa = newStage;
             emp.ultimaMovimentacao = new Date().toISOString();
-            saveToLocalStorage();
-            renderAllCards();
+            await updateEmployeeInFirestore(emp.id, emp);
         });
     });
     
     const deleteBtn = header.querySelector('.delete-card-btn');
     deleteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        showConfirm(`Remover "${emp.nome}" permanentemente?`, () => {
-            employees = employees.filter(e => e.id !== emp.id);
-            saveToLocalStorage();
-            renderAllCards();
+        showConfirm(`Remover "${emp.nome}" permanentemente?`, async () => {
+            await deleteEmployeeFromFirestore(emp.id);
         });
     });
     
@@ -372,15 +403,14 @@ function createCardElement(emp) {
         editFieldsDiv.querySelector('.edit-admissao').value = emp.dataAdmissao || '';
     });
     
-    saveEdit.addEventListener('click', () => {
+    saveEdit.addEventListener('click', async () => {
         const newNome = editFieldsDiv.querySelector('.edit-nome').value.trim();
         if (!newNome) return;
         emp.nome = newNome;
         emp.cpf = editFieldsDiv.querySelector('.edit-cpf').value;
         emp.polo = editFieldsDiv.querySelector('.edit-polo').value;
         emp.dataAdmissao = editFieldsDiv.querySelector('.edit-admissao').value;
-        saveToLocalStorage();
-        renderAllCards();
+        await updateEmployeeInFirestore(emp.id, emp);
     });
     
     cancelEdit.addEventListener('click', () => {
@@ -427,12 +457,11 @@ function drop(e) {
     const emp = employees.find(e => e.id == draggedId);
     if (emp && (emp.departamento !== targetDept || emp.subEtapa !== targetSub)) {
         const targetStageName = departments[targetDept].stages[targetSub];
-        showConfirm(`Mover "${emp.nome}" para ${departments[targetDept].name} → ${targetStageName}?`, () => {
+        showConfirm(`Mover "${emp.nome}" para ${departments[targetDept].name} → ${targetStageName}?`, async () => {
             emp.departamento = targetDept;
             emp.subEtapa = targetSub;
             emp.ultimaMovimentacao = new Date().toISOString();
-            saveToLocalStorage();
-            renderAllCards();
+            await updateEmployeeInFirestore(emp.id, emp);
         });
     }
 }
@@ -448,6 +477,7 @@ function attachEvents() {
     });
 }
 
+// Modal de adicionar/editar (sem departamento/etapa – sempre Recrutamento etapa 0)
 function openEmployeeModal(employee = null) {
     if (employee) {
         modalTitle.innerText = 'Editar funcionário';
@@ -464,7 +494,7 @@ function openEmployeeModal(employee = null) {
     employeeModal.classList.remove('hidden');
 }
 
-employeeForm.addEventListener('submit', (e) => {
+employeeForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const nome = document.getElementById('empNome').value.trim();
     if (!nome) return;
@@ -476,24 +506,26 @@ employeeForm.addEventListener('submit', (e) => {
     if (idEdit) {
         const idx = employees.findIndex(e => e.id == idEdit);
         if (idx !== -1) {
-            employees[idx].nome = nome;
-            employees[idx].cpf = cpf;
-            employees[idx].polo = polo;
-            employees[idx].dataAdmissao = admissao;
-            saveToLocalStorage();
-            renderAllCards();
+            const emp = employees[idx];
+            emp.nome = nome;
+            emp.cpf = cpf;
+            emp.polo = polo;
+            emp.dataAdmissao = admissao;
+            await updateEmployeeInFirestore(emp.id, emp);
         }
     } else {
-        employees.push({
-            id: Date.now(),
-            nome, cpf, polo, dataAdmissao: admissao,
+        const newEmployee = {
+            id: Date.now().toString(),
+            nome: nome,
+            cpf: cpf,
+            polo: polo,
+            dataAdmissao: admissao,
             departamento: 0,
             subEtapa: 0,
             dataCriacao: new Date().toISOString(),
             ultimaMovimentacao: new Date().toISOString()
-        });
-        saveToLocalStorage();
-        renderAllCards();
+        };
+        await addEmployeeToFirestore(newEmployee);
     }
     employeeModal.classList.add('hidden');
 });
@@ -517,6 +549,7 @@ confirmNoBtn.addEventListener('click', () => {
     currentConfirmCallback = null;
 });
 
+// Tema claro/escuro
 function initTheme() {
     const saved = localStorage.getItem('theme');
     if (saved === 'light') {
@@ -533,17 +566,25 @@ themeToggle.addEventListener('click', () => {
     themeToggle.innerHTML = isLight ? '<i class="fas fa-sun"></i> Tema' : '<i class="fas fa-moon"></i> Tema';
 });
 
+// Autenticação e inicialização
 function checkAuth() {
     setLoading(true);
     onAuthStateChanged(auth, (user) => {
         setLoading(false);
-        if (!user) window.location.href = 'index.html';
-        else loadInitialData();
+        if (!user) {
+            window.location.href = 'index.html';
+        } else {
+            // Usuário logado: monta o board e escuta o Firestore
+            renderBoard();
+            subscribeToEmployees(); // começa a escutar mudanças
+        }
     });
 }
+
 logoutBtn.addEventListener('click', async () => {
     setLoading(true);
     await signOut(auth);
+    if (unsubscribeSnapshot) unsubscribeSnapshot();
     window.location.href = 'index.html';
 });
 
@@ -552,5 +593,6 @@ function escapeHtml(str) {
     return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;');
 }
 
+// Inicialização
 initTheme();
 checkAuth();
