@@ -14,7 +14,6 @@ import {
     query 
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// Configuração do Firebase
 const firebaseConfig = {
     apiKey: "AIzaSyCY1CffzfAdazxL1_SrDNFq0-cVXOr4jWQ",
     authDomain: "customizakb.firebaseapp.com",
@@ -30,7 +29,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const employeesCollection = collection(db, "employees");
 
-// Definição dos departamentos e etapas
 const departments = {
     0: { name: "Recrutamento", icon: "fas fa-users", stages: ["Formulário de dados", "Envio para CTZ", "Aprovação CTZ", "Aprovação CBI"] },
     1: { name: "Departamento Pessoal", icon: "fas fa-file-alt", stages: ["Recebimento de RP", "Receber Documentação", "Exame médico", "Assinatura de doc", "Envio CTZ DOC"] },
@@ -41,7 +39,6 @@ let employees = [];
 let unsubscribeSnapshot = null;
 let currentConfirmCallback = null;
 
-// DOM
 const addBtn = document.getElementById('addEmployeeBtn');
 const logoutBtn = document.getElementById('logoutKanbanBtn');
 const themeToggle = document.getElementById('themeToggle');
@@ -74,7 +71,6 @@ function formatDateTime(isoString) {
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
-// Firestore operations
 async function addEmployeeToFirestore(employeeData) {
     const newId = Date.now().toString();
     const docRef = doc(employeesCollection, newId);
@@ -105,7 +101,6 @@ function subscribeToEmployees() {
     });
 }
 
-// Renderização do board (departamentos e colunas)
 function renderBoard() {
     kanbanBoard.innerHTML = '';
     for (let deptId = 0; deptId <= 2; deptId++) {
@@ -308,7 +303,6 @@ function createCardElement(emp) {
     return cardDiv;
 }
 
-// Drag & drop
 function attachDragAndDrop() {
     const cards = document.querySelectorAll('.card');
     cards.forEach(card => { card.setAttribute('draggable', 'true'); card.removeEventListener('dragstart', dragStart); card.removeEventListener('dragend', dragEnd); card.addEventListener('dragstart', dragStart); card.addEventListener('dragend', dragEnd); });
@@ -341,7 +335,6 @@ function attachEvents() {
     document.querySelectorAll('.sort-select').forEach(select => { select.removeEventListener('change', renderAllCards); select.addEventListener('change', renderAllCards); });
 }
 
-// Modal de criação/edição
 function openEmployeeModal(employee = null) {
     if (employee) {
         modalTitle.innerText = 'Editar funcionário';
@@ -407,7 +400,6 @@ function showConfirm(msg, onConfirm) {
 confirmYesBtn.addEventListener('click', () => { confirmModal.classList.add('hidden'); if (currentConfirmCallback) currentConfirmCallback(); currentConfirmCallback = null; });
 confirmNoBtn.addEventListener('click', () => { confirmModal.classList.add('hidden'); currentConfirmCallback = null; });
 
-// Tema
 function initTheme() {
     const saved = localStorage.getItem('theme');
     if (saved === 'light') { document.body.classList.add('light-mode'); themeToggle.innerHTML = '<i class="fas fa-sun"></i> Tema'; }
