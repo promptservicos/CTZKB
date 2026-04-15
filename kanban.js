@@ -126,7 +126,8 @@ function renderBoard() {
                     <option value="criacao_asc">Data criação ↑</option>
                     <option value="criacao_desc">Data criação ↓</option>
                     <option value="polo_asc">Polo A-Z</option>
-                    <option value="admissao_desc">Admissão ↑</option>
+                    <option value="admissao_asc">Admissão ↑ (mais antigo)</option>
+                    <option value="admissao_desc" selected>Admissão ↓ (mais recente)</option>
                 </select>
             </div>
         `;
@@ -168,6 +169,7 @@ function getFilteredAndSorted(deptId, searchTerm, sortType) {
         case 'criacao_asc': filtered.sort((a,b) => new Date(a.dataCriacao) - new Date(b.dataCriacao)); break;
         case 'criacao_desc': filtered.sort((a,b) => new Date(b.dataCriacao) - new Date(a.dataCriacao)); break;
         case 'polo_asc': filtered.sort((a,b) => (a.polo || '').localeCompare(b.polo || '')); break;
+        case 'admissao_asc': filtered.sort((a,b) => (a.dataAdmissao || '').localeCompare(b.dataAdmissao || '')); break;
         case 'admissao_desc': filtered.sort((a,b) => (b.dataAdmissao || '').localeCompare(a.dataAdmissao || '')); break;
         default: filtered.sort((a,b) => a.nome.localeCompare(b.nome));
     }
@@ -188,7 +190,7 @@ function renderAllCards() {
         const searchInput = document.querySelector(`.search-input[data-dept="${deptId}"]`);
         const sortSelect = document.querySelector(`.sort-select[data-dept="${deptId}"]`);
         const searchTerm = searchInput ? searchInput.value : '';
-        const sortType = sortSelect ? sortSelect.value : 'nome_asc';
+        const sortType = sortSelect ? sortSelect.value : 'admissao_desc';
         const filteredList = getFilteredAndSorted(deptId, searchTerm, sortType);
         const grouped = {};
         filteredList.forEach(emp => { if (!grouped[emp.subEtapa]) grouped[emp.subEtapa] = []; grouped[emp.subEtapa].push(emp); });
@@ -349,6 +351,7 @@ function openEmployeeModal(employee = null) {
         modalTitle.innerText = 'Adicionar funcionário';
         editId.value = '';
         employeeForm.reset();
+        document.getElementById('empAdmissao').value = ''; // opcional: pode definir data atual
     }
     employeeModal.classList.remove('hidden');
 }
