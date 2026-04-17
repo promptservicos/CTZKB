@@ -39,6 +39,9 @@ let employees = [];
 let unsubscribeSnapshot = null;
 let currentConfirmCallback = null;
 
+// ---------- Controle de permissão (somente leitura para um e-mail específico) ----------
+let isViewOnly = false; // será definido após login
+
 const addBtn = document.getElementById('addEmployeeBtn');
 const logoutBtn = document.getElementById('logoutKanbanBtn');
 const themeToggle = document.getElementById('themeToggle');
@@ -205,6 +208,7 @@ function renderAllCards() {
     attachDragAndDrop();
 }
 
+// Cria o cartão com ou sem botões de ação, dependendo de isViewOnly
 function createCardElement(emp) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
@@ -214,20 +218,39 @@ function createCardElement(emp) {
     const currentStage = emp.subEtapa;
     const hasPrev = !(currentDept === 0 && currentStage === 0);
     const hasNext = !(currentDept === 2 && currentStage === departments[2].stages.length - 1);
+
     const header = document.createElement('div');
     header.className = 'card-header';
+    
+    // Parte fixa: nome do funcionário
+    let buttonsHtml = '';
+    if (!isViewOnly) {
+        // Usuário normal: botões de mover, excluir e expandir (expandir é permitido)
+        buttonsHtml = `
+            <div class="card-actions-row">
+                <button class="move-btn move-left" ${!hasPrev ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-left"></i></button>
+                <button class="move-btn move-right" ${!hasNext ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-right"></i></button>
+                <button class="delete-card-btn"><i class="fas fa-trash-alt"></i></button>
+                <button class="expand-btn"><i class="fas fa-chevron-down"></i></button>
+            </div>
+        `;
+    } else {
+        // Usuário restrito: apenas o botão de expandir (visualizar detalhes)
+        buttonsHtml = `
+            <div class="card-actions-row">
+                <button class="expand-btn"><i class="fas fa-chevron-down"></i></button>
+            </div>
+        `;
+    }
     header.innerHTML = `
         <div class="card-info">
             <div class="card-nome">${escapeHtml(emp.nome)}</div>
         </div>
-        <div class="card-actions-row">
-            <button class="move-btn move-left" ${!hasPrev ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-left"></i></button>
-            <button class="move-btn move-right" ${!hasNext ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-right"></i></button>
-            <button class="delete-card-btn"><i class="fas fa-trash-alt"></i></button>
-            <button class="expand-btn"><i class="fas fa-chevron-down"></i></button>
-        </div>
+        ${buttonsHtml}
     `;
     cardDiv.appendChild(header);
+
+    // Detalhes do cartão (sempre visíveis após expandir)
     const details = document.createElement('div');
     details.className = 'card-details';
     details.innerHTML = `
@@ -237,7 +260,14 @@ function createCardElement(emp) {
         <div class="detail-row"><span class="detail-label">Expediente</span><span class="detail-value">${emp.inicioExpediente || '—'} às ${emp.fimExpediente || '—'}</span></div>
         <div class="detail-row"><span class="detail-label">Criado em</span><span class="detail-value">${formatDateTime(emp.dataCriacao)}</span></div>
         <div class="detail-row"><span class="detail-label">Última movimentação</span><span class="detail-value">${formatDateTime(emp.ultimaMovimentacao)}</span></div>
-        <div class="edit-fields" style="display: none;">
+    `;
+
+    // Se NÃO for usuário restrito, adiciona os campos de edição e o botão "Editar"
+    if (!isViewOnly) {
+        const editDiv = document.createElement('div');
+        editDiv.className = 'edit-fields';
+        editDiv.style.display = 'none';
+        editDiv.innerHTML = `
             <input type="text" class="edit-nome" value="${escapeHtml(emp.nome)}">
             <input type="text" class="edit-polo" value="${escapeHtml(emp.polo || '')}">
             <input type="date" class="edit-admissao" value="${emp.dataAdmissao || ''}">
@@ -254,65 +284,131 @@ function createCardElement(emp) {
                 <button class="btn-save-edit">Salvar</button>
                 <button class="btn-cancel-edit">Cancelar</button>
             </div>
-        </div>
-        <button class="btn-edit-card">✎ Editar</button>
-    `;
+        `;
+        details.appendChild(editDiv);
+        
+        const editButton = document.createElement('button');
+        editButton.className = 'btn-edit-card';
+        editButton.textContent = '✎ Editar';
+        details.appendChild(editButton);
+        
+        // Lógica de edição inline
+        const editFieldsDiv = editDiv;
+        const saveEdit = editFieldsDiv.querySelector('.btn-save-edit');
+        const cancelEdit = editFieldsDiv.querySelector('.btn-cancel-edit');
+        editButton.addEventListener('click', () => {
+            editFieldsDiv.style.display = 'flex';
+            editButton.style.display = 'none';
+        });
+        saveEdit.addEventListener('click', async () => {
+            const newNome = editFieldsDiv.querySelector('.edit-nome').value.trim();
+            if (!newNome) return;
+            emp.nome = newNome;
+            emp.polo = editFieldsDiv.querySelector('.edit-polo').value;
+            emp.dataAdmissao = editFieldsDiv.querySelector('.edit-admissao').value;
+            emp.turno = editFieldsDiv.querySelector('.edit-turno').value;
+            emp.inicioExpediente = editFieldsDiv.querySelector('.edit-inicio').value;
+            emp.fimExpediente = editFieldsDiv.querySelector('.edit-fim').value;
+            await updateEmployeeInFirestore(emp.id, emp);
+        });
+        cancelEdit.addEventListener('click', () => {
+            editFieldsDiv.style.display = 'none';
+            editButton.style.display = 'block';
+        });
+    }
+    
     cardDiv.appendChild(details);
 
+    // Evento do botão expandir/colapsar
     const expandBtn = header.querySelector('.expand-btn');
-    expandBtn.addEventListener('click', (e) => { e.stopPropagation(); expanded = !expanded; if (expanded) cardDiv.classList.add('expanded'); else cardDiv.classList.remove('expanded'); });
-    const moveLeft = header.querySelector('.move-left');
-    const moveRight = header.querySelector('.move-right');
-    if (moveLeft) moveLeft.addEventListener('click', (e) => {
+    expandBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        let newDept = currentDept, newStage = currentStage - 1;
-        if (newStage < 0) { if (currentDept > 0) { newDept = currentDept - 1; newStage = departments[newDept].stages.length - 1; } else return; }
-        const targetStageName = departments[newDept].stages[newStage];
-        showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, async () => {
-            emp.departamento = newDept; emp.subEtapa = newStage; emp.ultimaMovimentacao = new Date().toISOString();
-            await updateEmployeeInFirestore(emp.id, emp);
-        });
+        expanded = !expanded;
+        if (expanded) cardDiv.classList.add('expanded');
+        else cardDiv.classList.remove('expanded');
     });
-    if (moveRight) moveRight.addEventListener('click', (e) => {
-        e.stopPropagation();
-        let newDept = currentDept, newStage = currentStage + 1;
-        if (newStage >= departments[currentDept].stages.length) { if (currentDept < 2) { newDept = currentDept + 1; newStage = 0; } else return; }
-        const targetStageName = departments[newDept].stages[newStage];
-        showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, async () => {
-            emp.departamento = newDept; emp.subEtapa = newStage; emp.ultimaMovimentacao = new Date().toISOString();
-            await updateEmployeeInFirestore(emp.id, emp);
-        });
-    });
-    const deleteBtn = header.querySelector('.delete-card-btn');
-    deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); showConfirm(`Remover "${emp.nome}" permanentemente?`, async () => await deleteEmployeeFromFirestore(emp.id)); });
-    const editBtn = details.querySelector('.btn-edit-card');
-    const editFieldsDiv = details.querySelector('.edit-fields');
-    const saveEdit = editFieldsDiv.querySelector('.btn-save-edit');
-    const cancelEdit = editFieldsDiv.querySelector('.btn-cancel-edit');
-    editBtn.addEventListener('click', () => { editFieldsDiv.style.display = 'flex'; editBtn.style.display = 'none'; });
-    saveEdit.addEventListener('click', async () => {
-        const newNome = editFieldsDiv.querySelector('.edit-nome').value.trim();
-        if (!newNome) return;
-        emp.nome = newNome;
-        emp.polo = editFieldsDiv.querySelector('.edit-polo').value;
-        emp.dataAdmissao = editFieldsDiv.querySelector('.edit-admissao').value;
-        emp.turno = editFieldsDiv.querySelector('.edit-turno').value;
-        emp.inicioExpediente = editFieldsDiv.querySelector('.edit-inicio').value;
-        emp.fimExpediente = editFieldsDiv.querySelector('.edit-fim').value;
-        await updateEmployeeInFirestore(emp.id, emp);
-    });
-    cancelEdit.addEventListener('click', () => { editFieldsDiv.style.display = 'none'; editBtn.style.display = 'block'; });
+
+    // Se não for restrito, adiciona eventos de mover e excluir
+    if (!isViewOnly) {
+        const moveLeft = header.querySelector('.move-left');
+        const moveRight = header.querySelector('.move-right');
+        const deleteBtn = header.querySelector('.delete-card-btn');
+        
+        if (moveLeft) {
+            moveLeft.addEventListener('click', (e) => {
+                e.stopPropagation();
+                let newDept = currentDept, newStage = currentStage - 1;
+                if (newStage < 0) {
+                    if (currentDept > 0) {
+                        newDept = currentDept - 1;
+                        newStage = departments[newDept].stages.length - 1;
+                    } else return;
+                }
+                const targetStageName = departments[newDept].stages[newStage];
+                showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, async () => {
+                    emp.departamento = newDept;
+                    emp.subEtapa = newStage;
+                    emp.ultimaMovimentacao = new Date().toISOString();
+                    await updateEmployeeInFirestore(emp.id, emp);
+                });
+            });
+        }
+        if (moveRight) {
+            moveRight.addEventListener('click', (e) => {
+                e.stopPropagation();
+                let newDept = currentDept, newStage = currentStage + 1;
+                if (newStage >= departments[currentDept].stages.length) {
+                    if (currentDept < 2) {
+                        newDept = currentDept + 1;
+                        newStage = 0;
+                    } else return;
+                }
+                const targetStageName = departments[newDept].stages[newStage];
+                showConfirm(`Mover "${emp.nome}" para ${departments[newDept].name} → ${targetStageName}?`, async () => {
+                    emp.departamento = newDept;
+                    emp.subEtapa = newStage;
+                    emp.ultimaMovimentacao = new Date().toISOString();
+                    await updateEmployeeInFirestore(emp.id, emp);
+                });
+            });
+        }
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showConfirm(`Remover "${emp.nome}" permanentemente?`, async () => await deleteEmployeeFromFirestore(emp.id));
+            });
+        }
+    }
+
     return cardDiv;
 }
 
+// Drag and drop somente para usuários com permissão
 function attachDragAndDrop() {
+    if (isViewOnly) return; // usuário restrito: nada de arrastar
+    
     const cards = document.querySelectorAll('.card');
-    cards.forEach(card => { card.setAttribute('draggable', 'true'); card.removeEventListener('dragstart', dragStart); card.removeEventListener('dragend', dragEnd); card.addEventListener('dragstart', dragStart); card.addEventListener('dragend', dragEnd); });
+    cards.forEach(card => {
+        card.setAttribute('draggable', 'true');
+        card.removeEventListener('dragstart', dragStart);
+        card.removeEventListener('dragend', dragEnd);
+        card.addEventListener('dragstart', dragStart);
+        card.addEventListener('dragend', dragEnd);
+    });
     const containers = document.querySelectorAll('.cards-container');
-    containers.forEach(container => { container.removeEventListener('dragover', dragOver); container.removeEventListener('drop', drop); container.addEventListener('dragover', dragOver); container.addEventListener('drop', drop); });
+    containers.forEach(container => {
+        container.removeEventListener('dragover', dragOver);
+        container.removeEventListener('drop', drop);
+        container.addEventListener('dragover', dragOver);
+        container.addEventListener('drop', drop);
+    });
 }
+
 let draggedId = null;
-function dragStart(e) { draggedId = e.target.closest('.card').dataset.id; e.dataTransfer.setData('text/plain', draggedId); }
+function dragStart(e) {
+    draggedId = e.target.closest('.card').dataset.id;
+    e.dataTransfer.setData('text/plain', draggedId);
+}
 function dragEnd() { draggedId = null; }
 function dragOver(e) { e.preventDefault(); }
 function drop(e) {
@@ -326,18 +422,28 @@ function drop(e) {
     if (emp && (emp.departamento !== targetDept || emp.subEtapa !== targetSub)) {
         const targetStageName = departments[targetDept].stages[targetSub];
         showConfirm(`Mover "${emp.nome}" para ${departments[targetDept].name} → ${targetStageName}?`, async () => {
-            emp.departamento = targetDept; emp.subEtapa = targetSub; emp.ultimaMovimentacao = new Date().toISOString();
+            emp.departamento = targetDept;
+            emp.subEtapa = targetSub;
+            emp.ultimaMovimentacao = new Date().toISOString();
             await updateEmployeeInFirestore(emp.id, emp);
         });
     }
 }
 
 function attachEvents() {
-    document.querySelectorAll('.search-input').forEach(input => { input.removeEventListener('input', renderAllCards); input.addEventListener('input', renderAllCards); });
-    document.querySelectorAll('.sort-select').forEach(select => { select.removeEventListener('change', renderAllCards); select.addEventListener('change', renderAllCards); });
+    document.querySelectorAll('.search-input').forEach(input => {
+        input.removeEventListener('input', renderAllCards);
+        input.addEventListener('input', renderAllCards);
+    });
+    document.querySelectorAll('.sort-select').forEach(select => {
+        select.removeEventListener('change', renderAllCards);
+        select.addEventListener('change', renderAllCards);
+    });
 }
 
 function openEmployeeModal(employee = null) {
+    if (isViewOnly) return; // usuário restrito não pode abrir modal de adicionar/editar
+    
     if (employee) {
         modalTitle.innerText = 'Editar funcionário';
         editId.value = employee.id;
@@ -351,13 +457,15 @@ function openEmployeeModal(employee = null) {
         modalTitle.innerText = 'Adicionar funcionário';
         editId.value = '';
         employeeForm.reset();
-        document.getElementById('empAdmissao').value = ''; // opcional: pode definir data atual
+        document.getElementById('empAdmissao').value = '';
     }
     employeeModal.classList.remove('hidden');
 }
 
 employeeForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (isViewOnly) return; // segurança extra
+    
     const nome = document.getElementById('empNome').value.trim();
     if (!nome) return;
     const polo = document.getElementById('empPolo').value;
@@ -400,13 +508,24 @@ function showConfirm(msg, onConfirm) {
     confirmModal.classList.remove('hidden');
     currentConfirmCallback = onConfirm;
 }
-confirmYesBtn.addEventListener('click', () => { confirmModal.classList.add('hidden'); if (currentConfirmCallback) currentConfirmCallback(); currentConfirmCallback = null; });
-confirmNoBtn.addEventListener('click', () => { confirmModal.classList.add('hidden'); currentConfirmCallback = null; });
+confirmYesBtn.addEventListener('click', () => {
+    confirmModal.classList.add('hidden');
+    if (currentConfirmCallback) currentConfirmCallback();
+    currentConfirmCallback = null;
+});
+confirmNoBtn.addEventListener('click', () => {
+    confirmModal.classList.add('hidden');
+    currentConfirmCallback = null;
+});
 
 function initTheme() {
     const saved = localStorage.getItem('theme');
-    if (saved === 'light') { document.body.classList.add('light-mode'); themeToggle.innerHTML = '<i class="fas fa-sun"></i> Tema'; }
-    else { themeToggle.innerHTML = '<i class="fas fa-moon"></i> Tema'; }
+    if (saved === 'light') {
+        document.body.classList.add('light-mode');
+        themeToggle.innerHTML = '<i class="fas fa-sun"></i> Tema';
+    } else {
+        themeToggle.innerHTML = '<i class="fas fa-moon"></i> Tema';
+    }
 }
 themeToggle.addEventListener('click', () => {
     document.body.classList.toggle('light-mode');
@@ -419,11 +538,31 @@ function checkAuth() {
     setLoading(true);
     onAuthStateChanged(auth, (user) => {
         setLoading(false);
-        if (!user) window.location.href = 'index.html';
-        else { renderBoard(); subscribeToEmployees(); }
+        if (!user) {
+            window.location.href = 'index.html';
+        } else {
+            // Define permissão baseada no e-mail
+            isViewOnly = (user.email === "ctz@promptservicos.com.br");
+            
+            // Esconde/desabilita o botão "Novo Funcionário" se for somente leitura
+            if (isViewOnly) {
+                addBtn.style.display = 'none';
+            } else {
+                addBtn.style.display = 'flex';
+            }
+            
+            renderBoard();
+            subscribeToEmployees();
+        }
     });
 }
-logoutBtn.addEventListener('click', async () => { setLoading(true); await signOut(auth); if (unsubscribeSnapshot) unsubscribeSnapshot(); window.location.href = 'index.html'; });
+
+logoutBtn.addEventListener('click', async () => {
+    setLoading(true);
+    await signOut(auth);
+    if (unsubscribeSnapshot) unsubscribeSnapshot();
+    window.location.href = 'index.html';
+});
 
 function escapeHtml(str) {
     if (!str) return '';
