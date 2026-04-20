@@ -35,12 +35,21 @@ const departments = {
     2: { name: "Customiza", icon: "fas fa-briefcase", stages: ["Aprovação CTZ", "Integração CTZ"] }
 };
 
+// Função para obter o número da etapa global (1 a 11)
+function getGlobalStageNumber(deptId, subEtapa) {
+    // Ordem: Recrutamento (0) etapas 0-3, DP (1) etapas 0-4, Customiza (2) etapas 0-1
+    if (deptId === 0) return subEtapa + 1;                      // 1 a 4
+    if (deptId === 1) return 4 + subEtapa + 1;                  // 5 a 9
+    if (deptId === 2) return 9 + subEtapa + 1;                  // 10 a 11
+    return 0;
+}
+
 let employees = [];
 let unsubscribeSnapshot = null;
 let currentConfirmCallback = null;
 
 // ---------- Controle de permissão (somente leitura para um e-mail específico) ----------
-let isViewOnly = false; // será definido após login
+let isViewOnly = false;
 
 const addBtn = document.getElementById('addEmployeeBtn');
 const logoutBtn = document.getElementById('logoutKanbanBtn');
@@ -208,7 +217,6 @@ function renderAllCards() {
     attachDragAndDrop();
 }
 
-// Cria o cartão com ou sem botões de ação, dependendo de isViewOnly
 function createCardElement(emp) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
@@ -222,10 +230,8 @@ function createCardElement(emp) {
     const header = document.createElement('div');
     header.className = 'card-header';
     
-    // Parte fixa: nome do funcionário
     let buttonsHtml = '';
     if (!isViewOnly) {
-        // Usuário normal: botões de mover, excluir e expandir (expandir é permitido)
         buttonsHtml = `
             <div class="card-actions-row">
                 <button class="move-btn move-left" ${!hasPrev ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-left"></i></button>
@@ -235,7 +241,6 @@ function createCardElement(emp) {
             </div>
         `;
     } else {
-        // Usuário restrito: apenas o botão de expandir (visualizar detalhes)
         buttonsHtml = `
             <div class="card-actions-row">
                 <button class="expand-btn"><i class="fas fa-chevron-down"></i></button>
@@ -250,7 +255,6 @@ function createCardElement(emp) {
     `;
     cardDiv.appendChild(header);
 
-    // Detalhes do cartão (sempre visíveis após expandir)
     const details = document.createElement('div');
     details.className = 'card-details';
     details.innerHTML = `
@@ -262,7 +266,6 @@ function createCardElement(emp) {
         <div class="detail-row"><span class="detail-label">Última movimentação</span><span class="detail-value">${formatDateTime(emp.ultimaMovimentacao)}</span></div>
     `;
 
-    // Se NÃO for usuário restrito, adiciona os campos de edição e o botão "Editar"
     if (!isViewOnly) {
         const editDiv = document.createElement('div');
         editDiv.className = 'edit-fields';
@@ -292,7 +295,6 @@ function createCardElement(emp) {
         editButton.textContent = '✎ Editar';
         details.appendChild(editButton);
         
-        // Lógica de edição inline
         const editFieldsDiv = editDiv;
         const saveEdit = editFieldsDiv.querySelector('.btn-save-edit');
         const cancelEdit = editFieldsDiv.querySelector('.btn-cancel-edit');
@@ -319,7 +321,6 @@ function createCardElement(emp) {
     
     cardDiv.appendChild(details);
 
-    // Evento do botão expandir/colapsar
     const expandBtn = header.querySelector('.expand-btn');
     expandBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -328,7 +329,6 @@ function createCardElement(emp) {
         else cardDiv.classList.remove('expanded');
     });
 
-    // Se não for restrito, adiciona eventos de mover e excluir
     if (!isViewOnly) {
         const moveLeft = header.querySelector('.move-left');
         const moveRight = header.querySelector('.move-right');
@@ -383,9 +383,8 @@ function createCardElement(emp) {
     return cardDiv;
 }
 
-// Drag and drop somente para usuários com permissão
 function attachDragAndDrop() {
-    if (isViewOnly) return; // usuário restrito: nada de arrastar
+    if (isViewOnly) return;
     
     const cards = document.querySelectorAll('.card');
     cards.forEach(card => {
@@ -442,7 +441,7 @@ function attachEvents() {
 }
 
 function openEmployeeModal(employee = null) {
-    if (isViewOnly) return; // usuário restrito não pode abrir modal de adicionar/editar
+    if (isViewOnly) return;
     
     if (employee) {
         modalTitle.innerText = 'Editar funcionário';
@@ -464,7 +463,7 @@ function openEmployeeModal(employee = null) {
 
 employeeForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (isViewOnly) return; // segurança extra
+    if (isViewOnly) return;
     
     const nome = document.getElementById('empNome').value.trim();
     if (!nome) return;
@@ -541,16 +540,12 @@ function checkAuth() {
         if (!user) {
             window.location.href = 'index.html';
         } else {
-            // Define permissão baseada no e-mail
             isViewOnly = (user.email === "ctz@promptservicos.com.br");
-            
-            // Esconde/desabilita o botão "Novo Funcionário" se for somente leitura
             if (isViewOnly) {
                 addBtn.style.display = 'none';
             } else {
                 addBtn.style.display = 'flex';
             }
-            
             renderBoard();
             subscribeToEmployees();
         }
@@ -568,6 +563,73 @@ function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;');
 }
+
+// ---------- Exportar para Excel (com Nome primeiro, Etapa com progresso total 11, sem Departamento) ----------
+document.getElementById('exportExcelBtn').addEventListener('click', () => {
+    try {
+        let allFilteredEmployees = [];
+
+        for (let deptId = 0; deptId <= 2; deptId++) {
+            const searchInput = document.querySelector(`.search-input[data-dept="${deptId}"]`);
+            const sortSelect = document.querySelector(`.sort-select[data-dept="${deptId}"]`);
+            const searchTerm = searchInput ? searchInput.value : '';
+            const sortType = sortSelect ? sortSelect.value : 'admissao_desc';
+            const filtered = getFilteredAndSorted(deptId, searchTerm, sortType);
+            allFilteredEmployees.push(...filtered);
+        }
+
+        if (allFilteredEmployees.length === 0) {
+            alert("Nenhum funcionário para exportar.");
+            return;
+        }
+
+        // Cabeçalho: Nome, Etapa (progresso), Polo, Data Admissão, Turno, Início Expediente, Fim Expediente, Data Criação, Última Movimentação
+        const worksheetData = [
+            ["Nome", "Etapa (progresso)", "Polo", "Data Admissão", "Turno", "Início Expediente", "Fim Expediente", "Data Criação", "Última Movimentação"]
+        ];
+
+        allFilteredEmployees.forEach(emp => {
+            const deptName = departments[emp.departamento]?.name || "Desconhecido";
+            const stageName = departments[emp.departamento]?.stages[emp.subEtapa] || "Etapa inválida";
+            const globalStage = getGlobalStageNumber(emp.departamento, emp.subEtapa);
+            const stageWithProgress = `${stageName} (${globalStage}/11)`;
+
+            worksheetData.push([
+                emp.nome || "",
+                stageWithProgress,
+                emp.polo || "",
+                emp.dataAdmissao || "",
+                emp.turno || "",
+                emp.inicioExpediente || "",
+                emp.fimExpediente || "",
+                formatDateTime(emp.dataCriacao),
+                formatDateTime(emp.ultimaMovimentacao)
+            ]);
+        });
+
+        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Kanban");
+
+        worksheet['!cols'] = [
+            {wch:25},  // Nome
+            {wch:30},  // Etapa (progresso)
+            {wch:15},  // Polo
+            {wch:12},  // Data Admissão
+            {wch:10},  // Turno
+            {wch:12},  // Início Expediente
+            {wch:12},  // Fim Expediente
+            {wch:18},  // Data Criação
+            {wch:18}   // Última Movimentação
+        ];
+
+        const fileName = `kanban_export_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+    } catch (error) {
+        console.error("Erro ao exportar Excel:", error);
+        alert("Falha ao gerar o arquivo Excel. Verifique o console para mais detalhes.");
+    }
+});
 
 initTheme();
 checkAuth();

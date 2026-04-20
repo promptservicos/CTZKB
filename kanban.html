@@ -17,6 +17,7 @@
             </div>
             <div class="header-actions">
                 <button id="addEmployeeBtn" class="btn-icon-text"><i class="fas fa-plus"></i> Novo Funcionário</button>
+                <button id="exportExcelBtn" class="btn-icon-text"><i class="fas fa-file-excel"></i> Exportar Excel</button>
                 <button id="themeToggle" class="btn-icon-text"><i class="fas fa-moon"></i> Tema</button>
                 <button id="logoutKanbanBtn" class="btn-icon-text"><i class="fas fa-sign-out-alt"></i> Sair</button>
             </div>
@@ -90,6 +91,8 @@
         <div class="loading-text">Carregando...</div>
     </div>
 
+    <!-- Biblioteca SheetJS para exportar Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <script type="module" src="kanban.js"></script>
 </body>
 </html>
