@@ -31,16 +31,18 @@ const employeesCollection = collection(db, "employees");
 
 const departments = {
     0: { name: "Recrutamento", icon: "fas fa-users", stages: ["Formulário de dados", "Envio para CTZ", "Aprovação CTZ", "Aprovação CBI"] },
-    1: { name: "Departamento Pessoal", icon: "fas fa-file-alt", stages: ["Recebimento de RP", "Receber Documentação", "Exame médico", "Assinatura de doc", "Envio CTZ DOC"] },
+    1: { name: "Departamento Pessoal", icon: "fas fa-file-alt", stages: ["Recebimento de RP", "Receber Documentação", "Exame médico", "Assinatura de doc", "Aguardando Aprovação", "Envio CTZ DOC"] },  // ← nova etapa
     2: { name: "Customiza", icon: "fas fa-briefcase", stages: ["Aprovação CTZ", "Integração CTZ"] }
 };
 
 // Função para obter o número da etapa global (1 a 11)
 function getGlobalStageNumber(deptId, subEtapa) {
-    // Ordem: Recrutamento (0) etapas 0-3, DP (1) etapas 0-4, Customiza (2) etapas 0-1
-    if (deptId === 0) return subEtapa + 1;                      // 1 a 4
-    if (deptId === 1) return 4 + subEtapa + 1;                  // 5 a 9
-    if (deptId === 2) return 9 + subEtapa + 1;                  // 10 a 11
+    // Recrutamento: 4 etapas → 1 a 4
+    if (deptId === 0) return subEtapa + 1;
+    // DP: 6 etapas → 5 a 10
+    if (deptId === 1) return 4 + subEtapa + 1;   // 4 do Recrutamento + subEtapa + 1
+    // Customiza: 2 etapas → 11 a 12
+    if (deptId === 2) return 10 + subEtapa + 1;  // 4 (Recrut) + 6 (DP) = 10
     return 0;
 }
 
@@ -592,7 +594,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', () => {
             const deptName = departments[emp.departamento]?.name || "Desconhecido";
             const stageName = departments[emp.departamento]?.stages[emp.subEtapa] || "Etapa inválida";
             const globalStage = getGlobalStageNumber(emp.departamento, emp.subEtapa);
-            const stageWithProgress = `${stageName} (${globalStage}/11)`;
+            const stageWithProgress = `${stageName} (${globalStage}/12)`;
 
             worksheetData.push([
                 emp.nome || "",
