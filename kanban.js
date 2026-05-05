@@ -31,7 +31,7 @@ const employeesCollection = collection(db, "employees");
 
 const departments = {
     0: { name: "Recrutamento", icon: "fas fa-users", stages: ["Formulário de dados", "Envio para CTZ", "Aprovação CTZ", "Aprovação CBI"] },
-    1: { name: "Departamento Pessoal", icon: "fas fa-file-alt", stages: ["Recebimento de RP", "Receber Documentação", "Exame médico", "Assinatura de doc", "Aguardando Aprovação", "Envio CTZ DOC"] },  // ← nova etapa
+    1: { name: "Departamento Pessoal", icon: "fas fa-file-alt", stages: ["Recebimento de RP", "Receber Documentação", "Exame médico", "Aguardando Aprovação", "Assinatura de doc", "Envio CTZ DOC"] },  // ← nova etapa
     2: { name: "Customiza", icon: "fas fa-briefcase", stages: ["Aprovação CTZ", "Integração CTZ"] }
 };
 
