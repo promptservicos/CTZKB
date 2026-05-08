@@ -11,7 +11,8 @@ import {
     setDoc, 
     deleteDoc, 
     onSnapshot, 
-    query 
+    query,
+    limit
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -31,34 +32,34 @@ const employeesCollection = collection(db, "employees");
 
 const departments = {
     0: { name: "Recrutamento", icon: "fas fa-users", stages: ["Formulário de dados", "Envio para CTZ", "Aprovação CTZ", "Aprovação CBI"] },
-    1: { name: "Departamento Pessoal", icon: "fas fa-file-alt", stages: ["Recebimento de RP", "Receber Documentação", "Exame médico", "Aguardando Aprovação", "Assinatura de doc", "Envio CTZ DOC"] },  // ← nova etapa
+    1: { name: "Departamento Pessoal", icon: "fas fa-file-alt", stages: ["Recebimento de RP", "Receber Documentação", "Exame médico", "Aguardando Aprovação", "Assinatura de doc", "Envio CTZ DOC"] },
     2: { name: "Customiza", icon: "fas fa-briefcase", stages: ["Aprovação CTZ", "Integração CTZ"] }
 };
 
-// Função para obter o número da etapa global (1 a 11)
-function getGlobalStageNumber(deptId, subEtapa) {
-    // Recrutamento: 4 etapas → 1 a 4
-    if (deptId === 0) return subEtapa + 1;
-    // DP: 6 etapas → 5 a 10
-    if (deptId === 1) return 4 + subEtapa + 1;   // 4 do Recrutamento + subEtapa + 1
-    // Customiza: 2 etapas → 11 a 12
-    if (deptId === 2) return 10 + subEtapa + 1;  // 4 (Recrut) + 6 (DP) = 10
-    return 0;
-}
+// Cache para elementos DOM
+const domCache = {
+    containers: new Map(),
+    badges: new Map(),
+    searchInputs: [],
+    sortSelects: []
+};
 
 let employees = [];
 let unsubscribeSnapshot = null;
 let currentConfirmCallback = null;
-
-// ---------- Controle de permissão (somente leitura para um e-mail específico) ----------
 let isViewOnly = false;
+let renderScheduled = false;
+let pendingRender = false;
 
+// DOM elements
 const addBtn = document.getElementById('addEmployeeBtn');
 const logoutBtn = document.getElementById('logoutKanbanBtn');
 const themeToggle = document.getElementById('themeToggle');
+const themeToggleFab = document.getElementById('themeToggleFab');
 const employeeModal = document.getElementById('employeeModal');
 const confirmModal = document.getElementById('confirmModal');
 const loadingOverlay = document.getElementById('loadingOverlay');
+const loadingText = document.querySelector('.loading-text');
 const employeeForm = document.getElementById('employeeForm');
 const modalTitle = document.getElementById('modalTitle');
 const editId = document.getElementById('editId');
@@ -66,12 +67,17 @@ const confirmMessageSpan = document.getElementById('confirmMessage');
 const confirmYesBtn = document.getElementById('confirmYes');
 const confirmNoBtn = document.getElementById('confirmNo');
 const cancelModalBtn = document.getElementById('cancelModalBtn');
-const modalClose = document.querySelector('.modal-close');
+const modalCloseBtn = document.querySelector('.modal-close-btn');
 const kanbanBoard = document.getElementById('kanbanBoard');
 
-function setLoading(show) {
-    if (show) loadingOverlay.classList.remove('hidden');
-    else loadingOverlay.classList.add('hidden');
+// ========== UTILITÁRIOS ==========
+function setLoading(show, message = 'Carregando...') {
+    if (show) {
+        loadingText.textContent = message;
+        loadingOverlay.classList.remove('hidden');
+    } else {
+        loadingOverlay.classList.add('hidden');
+    }
 }
 
 function showError(msg) {
@@ -79,12 +85,46 @@ function showError(msg) {
     console.error(msg);
 }
 
+let toastTimeout = null;
+function showTemporaryMessage(msg, type = 'info') {
+    // Remove toast existente
+    const existingToast = document.querySelector('.toast-message');
+    if (existingToast) {
+        existingToast.remove();
+        if (toastTimeout) clearTimeout(toastTimeout);
+    }
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `toast-message toast-${type}`;
+    messageDiv.innerHTML = `
+        <i class='bx ${type === 'success' ? 'bx-check-circle' : type === 'error' ? 'bx-error-circle' : 'bx-info-circle'}'></i>
+        <span>${msg}</span>
+    `;
+    
+    document.body.appendChild(messageDiv);
+    
+    toastTimeout = setTimeout(() => {
+        if (messageDiv.parentNode) {
+            messageDiv.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => messageDiv.remove(), 300);
+        }
+        toastTimeout = null;
+    }, 3000);
+}
+
 function formatDateTime(isoString) {
     if (!isoString) return '—';
     const d = new Date(isoString);
-    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    if (isNaN(d.getTime())) return '—';
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 }
 
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;');
+}
+
+// ========== FIREBASE OPERATIONS ==========
 async function addEmployeeToFirestore(employeeData) {
     const newId = Date.now().toString();
     const docRef = doc(employeesCollection, newId);
@@ -105,23 +145,79 @@ function subscribeToEmployees() {
     if (unsubscribeSnapshot) unsubscribeSnapshot();
     const q = query(employeesCollection);
     unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-        employees = [];
-        snapshot.forEach(doc => employees.push(doc.data()));
-        employees.sort((a,b) => a.id - b.id);
-        renderAllCards();
+        const newEmployees = [];
+        snapshot.forEach(doc => newEmployees.push(doc.data()));
+        newEmployees.sort((a,b) => a.id - b.id);
+        employees = newEmployees;
+        
+        // Renderização otimizada com requestAnimationFrame
+        if (!renderScheduled) {
+            renderScheduled = true;
+            requestAnimationFrame(() => {
+                renderAllCards();
+                renderScheduled = false;
+            });
+        }
     }, (error) => {
         console.error("Erro no Firestore:", error);
-        showError("Erro ao carregar dados. Verifique as regras do Firestore.");
+        showError("Erro ao carregar dados.");
     });
 }
 
+// ========== FILTROS E ORDENAÇÃO OTIMIZADOS ==========
+const sortComparators = {
+    nome_asc: (a, b) => a.nome.localeCompare(b.nome),
+    nome_desc: (a, b) => b.nome.localeCompare(a.nome),
+    criacao_asc: (a, b) => new Date(a.dataCriacao) - new Date(b.dataCriacao),
+    criacao_desc: (a, b) => new Date(b.dataCriacao) - new Date(a.dataCriacao),
+    polo_asc: (a, b) => (a.polo || '').localeCompare(b.polo || ''),
+    admissao_asc: (a, b) => (a.dataAdmissao || '').localeCompare(b.dataAdmissao || ''),
+    admissao_desc: (a, b) => (b.dataAdmissao || '').localeCompare(a.dataAdmissao || '')
+};
+
+function getFilteredAndSorted(deptId, searchTerm, sortType) {
+    let filtered = employees;
+    const lowerSearchTerm = searchTerm ? searchTerm.toLowerCase() : '';
+    
+    if (lowerSearchTerm) {
+        filtered = [];
+        for (let i = 0; i < employees.length; i++) {
+            const e = employees[i];
+            if (e.departamento === deptId && 
+                (e.nome.toLowerCase().includes(lowerSearchTerm) || 
+                 (e.polo && e.polo.toLowerCase().includes(lowerSearchTerm)))) {
+                filtered.push(e);
+            }
+        }
+    } else {
+        filtered = [];
+        for (let i = 0; i < employees.length; i++) {
+            if (employees[i].departamento === deptId) {
+                filtered.push(employees[i]);
+            }
+        }
+    }
+    
+    const comparator = sortComparators[sortType];
+    if (comparator) {
+        filtered.sort(comparator);
+    }
+    
+    return filtered;
+}
+
+// ========== RENDERIZAÇÃO OTIMIZADA ==========
 function renderBoard() {
     kanbanBoard.innerHTML = '';
+    domCache.containers.clear();
+    domCache.badges.clear();
+    
     for (let deptId = 0; deptId <= 2; deptId++) {
         const dept = departments[deptId];
         const block = document.createElement('div');
         block.className = 'department-block';
         block.dataset.department = deptId;
+        
         const header = document.createElement('div');
         header.className = 'department-header';
         header.innerHTML = `
@@ -130,100 +226,123 @@ function renderBoard() {
                 <h2>${dept.name}</h2>
             </div>
             <div class="department-controls">
-                <div class="search-box">
-                    <i class="fas fa-search"></i>
-                    <input type="text" class="search-input" placeholder="Filtrar..." data-dept="${deptId}">
+                <div class="dept-search-box">
+                    <i class='bx bx-search'></i>
+                    <input type="text" class="dept-search-input" placeholder="Buscar..." data-dept="${deptId}">
                 </div>
-                <select class="sort-select" data-dept="${deptId}">
-                    <option value="nome_asc">A-Z</option>
-                    <option value="nome_desc">Z-A</option>
-                    <option value="criacao_asc">Data criação ↑</option>
-                    <option value="criacao_desc">Data criação ↓</option>
+                <select class="dept-sort-select" data-dept="${deptId}">
+                    <option value="nome_asc">Nome A-Z</option>
+                    <option value="nome_desc">Nome Z-A</option>
+                    <option value="criacao_asc">Criação ↑</option>
+                    <option value="criacao_desc">Criação ↓</option>
                     <option value="polo_asc">Polo A-Z</option>
-                    <option value="admissao_asc">Admissão ↑ (mais antigo)</option>
-                    <option value="admissao_desc" selected>Admissão ↓ (mais recente)</option>
+                    <option value="admissao_asc">Admissão ↑</option>
+                    <option value="admissao_desc" selected>Admissão ↓</option>
                 </select>
             </div>
         `;
         block.appendChild(header);
+        
         const columnsContainer = document.createElement('div');
         columnsContainer.className = 'columns-container';
+        
         dept.stages.forEach((stageName, stageIdx) => {
             const column = document.createElement('div');
             column.className = 'kanban-column';
             column.dataset.dept = deptId;
             column.dataset.substage = stageIdx;
+            
             const colHeader = document.createElement('div');
             colHeader.className = 'column-header';
-            colHeader.innerHTML = `<h3>${stageName}</h3><span class="column-count" id="count-${deptId}-${stageIdx}">0</span>`;
+            colHeader.innerHTML = `
+                <h3 title="${stageName}">${stageName}</h3>
+                <span class="column-count" id="count-${deptId}-${stageIdx}">0</span>
+            `;
             column.appendChild(colHeader);
+            
             const cardsContainer = document.createElement('div');
             cardsContainer.className = 'cards-container';
             cardsContainer.id = `container-${deptId}-${stageIdx}`;
             column.appendChild(cardsContainer);
             columnsContainer.appendChild(column);
+            
+            // Cache dos containers
+            domCache.containers.set(`container-${deptId}-${stageIdx}`, cardsContainer);
+            domCache.badges.set(`count-${deptId}-${stageIdx}`, colHeader.querySelector('.column-count'));
         });
+        
         block.appendChild(columnsContainer);
         kanbanBoard.appendChild(block);
     }
-    renderAllCards();
+    
     attachEvents();
-    attachDragAndDrop();
-}
-
-function getFilteredAndSorted(deptId, searchTerm, sortType) {
-    let filtered = employees.filter(e => e.departamento === deptId);
-    if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        filtered = filtered.filter(e => e.nome.toLowerCase().includes(term) || (e.polo && e.polo.toLowerCase().includes(term)));
-    }
-    switch(sortType) {
-        case 'nome_asc': filtered.sort((a,b) => a.nome.localeCompare(b.nome)); break;
-        case 'nome_desc': filtered.sort((a,b) => b.nome.localeCompare(a.nome)); break;
-        case 'criacao_asc': filtered.sort((a,b) => new Date(a.dataCriacao) - new Date(b.dataCriacao)); break;
-        case 'criacao_desc': filtered.sort((a,b) => new Date(b.dataCriacao) - new Date(a.dataCriacao)); break;
-        case 'polo_asc': filtered.sort((a,b) => (a.polo || '').localeCompare(b.polo || '')); break;
-        case 'admissao_asc': filtered.sort((a,b) => (a.dataAdmissao || '').localeCompare(b.dataAdmissao || '')); break;
-        case 'admissao_desc': filtered.sort((a,b) => (b.dataAdmissao || '').localeCompare(a.dataAdmissao || '')); break;
-        default: filtered.sort((a,b) => a.nome.localeCompare(b.nome));
-    }
-    return filtered;
+    renderAllCards();
 }
 
 function renderAllCards() {
-    for (let deptId = 0; deptId <= 2; deptId++) {
-        const stagesCount = departments[deptId].stages.length;
-        for (let s = 0; s < stagesCount; s++) {
-            const container = document.getElementById(`container-${deptId}-${s}`);
-            if (container) container.innerHTML = '';
-            const badge = document.getElementById(`count-${deptId}-${s}`);
-            if (badge) badge.innerText = '0';
-        }
+    // Limpar containers usando cache
+    for (let [id, container] of domCache.containers) {
+        container.innerHTML = '';
     }
+    
+    for (let [id, badge] of domCache.badges) {
+        badge.innerText = '0';
+    }
+    
+    // Buscar valores atuais dos filtros
+    const searchValues = {};
+    const sortValues = {};
+    
+    document.querySelectorAll('.dept-search-input').forEach(input => {
+        searchValues[input.dataset.dept] = input.value;
+    });
+    document.querySelectorAll('.dept-sort-select').forEach(select => {
+        sortValues[select.dataset.dept] = select.value;
+    });
+    
+    // Renderizar cada departamento
     for (let deptId = 0; deptId <= 2; deptId++) {
-        const searchInput = document.querySelector(`.search-input[data-dept="${deptId}"]`);
-        const sortSelect = document.querySelector(`.sort-select[data-dept="${deptId}"]`);
-        const searchTerm = searchInput ? searchInput.value : '';
-        const sortType = sortSelect ? sortSelect.value : 'admissao_desc';
+        const searchTerm = searchValues[deptId] || '';
+        const sortType = sortValues[deptId] || 'admissao_desc';
+        
         const filteredList = getFilteredAndSorted(deptId, searchTerm, sortType);
+        
+        // Agrupar por etapa
         const grouped = {};
-        filteredList.forEach(emp => { if (!grouped[emp.subEtapa]) grouped[emp.subEtapa] = []; grouped[emp.subEtapa].push(emp); });
+        for (let i = 0; i < filteredList.length; i++) {
+            const emp = filteredList[i];
+            const stage = emp.subEtapa !== undefined ? emp.subEtapa : 0;
+            if (!grouped[stage]) grouped[stage] = [];
+            grouped[stage].push(emp);
+        }
+        
+        // Atualizar badges e containers
         const stagesCount = departments[deptId].stages.length;
         for (let s = 0; s < stagesCount; s++) {
-            const container = document.getElementById(`container-${deptId}-${s}`);
-            const badge = document.getElementById(`count-${deptId}-${s}`);
+            const badge = domCache.badges.get(`count-${deptId}-${s}`);
             if (badge) badge.innerText = (grouped[s] || []).length;
-            if (container && grouped[s]) grouped[s].forEach(emp => container.appendChild(createCardElement(emp)));
+            
+            const container = domCache.containers.get(`container-${deptId}-${s}`);
+            if (container && grouped[s]) {
+                const fragment = document.createDocumentFragment();
+                for (let i = 0; i < grouped[s].length; i++) {
+                    fragment.appendChild(createCardElement(grouped[s][i]));
+                }
+                container.appendChild(fragment);
+            }
         }
     }
+    
     attachDragAndDrop();
 }
 
+// Template de card para reutilização
 function createCardElement(emp) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
     cardDiv.dataset.id = emp.id;
     let expanded = false;
+    
     const currentDept = emp.departamento;
     const currentStage = emp.subEtapa;
     const hasPrev = !(currentDept === 0 && currentStage === 0);
@@ -236,19 +355,20 @@ function createCardElement(emp) {
     if (!isViewOnly) {
         buttonsHtml = `
             <div class="card-actions-row">
-                <button class="move-btn move-left" ${!hasPrev ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-left"></i></button>
-                <button class="move-btn move-right" ${!hasNext ? 'disabled style="opacity:0.4;"' : ''}><i class="fas fa-arrow-right"></i></button>
-                <button class="delete-card-btn"><i class="fas fa-trash-alt"></i></button>
-                <button class="expand-btn"><i class="fas fa-chevron-down"></i></button>
+                <button class="move-btn move-left" ${!hasPrev ? 'disabled' : ''}><i class='bx bx-chevron-left'></i></button>
+                <button class="move-btn move-right" ${!hasNext ? 'disabled' : ''}><i class='bx bx-chevron-right'></i></button>
+                <button class="delete-card-btn"><i class='bx bx-trash-alt'></i></button>
+                <button class="expand-btn"><i class='bx bx-chevron-down'></i></button>
             </div>
         `;
     } else {
         buttonsHtml = `
             <div class="card-actions-row">
-                <button class="expand-btn"><i class="fas fa-chevron-down"></i></button>
+                <button class="expand-btn"><i class='bx bx-chevron-down'></i></button>
             </div>
         `;
     }
+    
     header.innerHTML = `
         <div class="card-info">
             <div class="card-nome">${escapeHtml(emp.nome)}</div>
@@ -273,11 +393,11 @@ function createCardElement(emp) {
         editDiv.className = 'edit-fields';
         editDiv.style.display = 'none';
         editDiv.innerHTML = `
-            <input type="text" class="edit-nome" value="${escapeHtml(emp.nome)}">
-            <input type="text" class="edit-polo" value="${escapeHtml(emp.polo || '')}">
+            <input type="text" class="edit-nome" placeholder="Nome" value="${escapeHtml(emp.nome)}">
+            <input type="text" class="edit-polo" placeholder="Polo" value="${escapeHtml(emp.polo || '')}">
             <input type="date" class="edit-admissao" value="${emp.dataAdmissao || ''}">
             <select class="edit-turno">
-                <option value="">Selecione</option>
+                <option value="">Selecione turno</option>
                 <option value="Manhã" ${emp.turno === 'Manhã' ? 'selected' : ''}>Manhã</option>
                 <option value="Tarde" ${emp.turno === 'Tarde' ? 'selected' : ''}>Tarde</option>
                 <option value="Noite" ${emp.turno === 'Noite' ? 'selected' : ''}>Noite</option>
@@ -294,16 +414,18 @@ function createCardElement(emp) {
         
         const editButton = document.createElement('button');
         editButton.className = 'btn-edit-card';
-        editButton.textContent = '✎ Editar';
+        editButton.innerHTML = '<i class="bx bx-info-circle"></i> Informações';
         details.appendChild(editButton);
         
         const editFieldsDiv = editDiv;
         const saveEdit = editFieldsDiv.querySelector('.btn-save-edit');
         const cancelEdit = editFieldsDiv.querySelector('.btn-cancel-edit');
+        
         editButton.addEventListener('click', () => {
             editFieldsDiv.style.display = 'flex';
             editButton.style.display = 'none';
         });
+        
         saveEdit.addEventListener('click', async () => {
             const newNome = editFieldsDiv.querySelector('.edit-nome').value.trim();
             if (!newNome) return;
@@ -314,7 +436,9 @@ function createCardElement(emp) {
             emp.inicioExpediente = editFieldsDiv.querySelector('.edit-inicio').value;
             emp.fimExpediente = editFieldsDiv.querySelector('.edit-fim').value;
             await updateEmployeeInFirestore(emp.id, emp);
+            showTemporaryMessage('Funcionário atualizado!', 'success');
         });
+        
         cancelEdit.addEventListener('click', () => {
             editFieldsDiv.style.display = 'none';
             editButton.style.display = 'block';
@@ -352,6 +476,7 @@ function createCardElement(emp) {
                     emp.subEtapa = newStage;
                     emp.ultimaMovimentacao = new Date().toISOString();
                     await updateEmployeeInFirestore(emp.id, emp);
+                    showTemporaryMessage(`Movido para: ${departments[newDept].name} - ${targetStageName}`, 'success');
                 });
             });
         }
@@ -371,13 +496,17 @@ function createCardElement(emp) {
                     emp.subEtapa = newStage;
                     emp.ultimaMovimentacao = new Date().toISOString();
                     await updateEmployeeInFirestore(emp.id, emp);
+                    showTemporaryMessage(`Movido para: ${departments[newDept].name} - ${targetStageName}`, 'success');
                 });
             });
         }
         if (deleteBtn) {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                showConfirm(`Remover "${emp.nome}" permanentemente?`, async () => await deleteEmployeeFromFirestore(emp.id));
+                showConfirm(`Remover "${emp.nome}" permanentemente?`, async () => {
+                    await deleteEmployeeFromFirestore(emp.id);
+                    showTemporaryMessage('Funcionário removido!', 'success');
+                });
             });
         }
     }
@@ -385,33 +514,36 @@ function createCardElement(emp) {
     return cardDiv;
 }
 
+// ========== DRAG AND DROP OTIMIZADO ==========
+let draggedId = null;
+let dragEnabled = true;
+
 function attachDragAndDrop() {
-    if (isViewOnly) return;
+    if (isViewOnly || !dragEnabled) return;
     
     const cards = document.querySelectorAll('.card');
-    cards.forEach(card => {
+    for (let i = 0; i < cards.length; i++) {
+        const card = cards[i];
         card.setAttribute('draggable', 'true');
-        card.removeEventListener('dragstart', dragStart);
-        card.removeEventListener('dragend', dragEnd);
-        card.addEventListener('dragstart', dragStart);
-        card.addEventListener('dragend', dragEnd);
-    });
+    }
+    
     const containers = document.querySelectorAll('.cards-container');
-    containers.forEach(container => {
-        container.removeEventListener('dragover', dragOver);
-        container.removeEventListener('drop', drop);
+    for (let i = 0; i < containers.length; i++) {
+        const container = containers[i];
         container.addEventListener('dragover', dragOver);
         container.addEventListener('drop', drop);
-    });
+    }
 }
 
-let draggedId = null;
 function dragStart(e) {
     draggedId = e.target.closest('.card').dataset.id;
     e.dataTransfer.setData('text/plain', draggedId);
 }
+
 function dragEnd() { draggedId = null; }
+
 function dragOver(e) { e.preventDefault(); }
+
 function drop(e) {
     e.preventDefault();
     const targetContainer = e.target.closest('.cards-container');
@@ -420,6 +552,7 @@ function drop(e) {
     const targetDept = parseInt(column.dataset.dept);
     const targetSub = parseInt(column.dataset.substage);
     const emp = employees.find(e => e.id == draggedId);
+    
     if (emp && (emp.departamento !== targetDept || emp.subEtapa !== targetSub)) {
         const targetStageName = departments[targetDept].stages[targetSub];
         showConfirm(`Mover "${emp.nome}" para ${departments[targetDept].name} → ${targetStageName}?`, async () => {
@@ -427,21 +560,42 @@ function drop(e) {
             emp.subEtapa = targetSub;
             emp.ultimaMovimentacao = new Date().toISOString();
             await updateEmployeeInFirestore(emp.id, emp);
+            showTemporaryMessage(`Movido para: ${departments[targetDept].name} - ${targetStageName}`, 'success');
         });
     }
 }
 
+// ========== EVENTOS OTIMIZADOS (com debounce) ==========
+let debounceTimeout = null;
+
 function attachEvents() {
-    document.querySelectorAll('.search-input').forEach(input => {
-        input.removeEventListener('input', renderAllCards);
-        input.addEventListener('input', renderAllCards);
+    // Debounce para inputs de busca
+    const searchInputs = document.querySelectorAll('.dept-search-input');
+    searchInputs.forEach(input => {
+        input.removeEventListener('input', handleSearchInput);
+        input.addEventListener('input', handleSearchInput);
     });
-    document.querySelectorAll('.sort-select').forEach(select => {
-        select.removeEventListener('change', renderAllCards);
-        select.addEventListener('change', renderAllCards);
+    
+    const sortSelects = document.querySelectorAll('.dept-sort-select');
+    sortSelects.forEach(select => {
+        select.removeEventListener('change', handleSortChange);
+        select.addEventListener('change', handleSortChange);
     });
 }
 
+function handleSearchInput() {
+    if (debounceTimeout) clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(() => {
+        renderAllCards();
+        debounceTimeout = null;
+    }, 150);
+}
+
+function handleSortChange() {
+    renderAllCards();
+}
+
+// ========== MODAL ==========
 function openEmployeeModal(employee = null) {
     if (isViewOnly) return;
     
@@ -455,12 +609,11 @@ function openEmployeeModal(employee = null) {
         document.getElementById('empInicio').value = employee.inicioExpediente || '';
         document.getElementById('empFim').value = employee.fimExpediente || '';
     } else {
-        modalTitle.innerText = 'Adicionar funcionário';
+        modalTitle.innerText = 'Novo Funcionário';
         editId.value = '';
         employeeForm.reset();
-        document.getElementById('empAdmissao').value = '';
     }
-    employeeModal.classList.remove('hidden');
+    employeeModal.style.display = 'flex';
 }
 
 employeeForm.addEventListener('submit', async (e) => {
@@ -475,6 +628,7 @@ employeeForm.addEventListener('submit', async (e) => {
     const inicio = document.getElementById('empInicio').value;
     const fim = document.getElementById('empFim').value;
     const idEdit = editId.value;
+    
     if (idEdit) {
         const idx = employees.findIndex(e => e.id == idEdit);
         if (idx !== -1) {
@@ -486,55 +640,179 @@ employeeForm.addEventListener('submit', async (e) => {
             emp.inicioExpediente = inicio;
             emp.fimExpediente = fim;
             await updateEmployeeInFirestore(emp.id, emp);
+            showTemporaryMessage('Funcionário atualizado!', 'success');
         }
     } else {
         const newEmployee = {
             id: Date.now().toString(),
-            nome, polo, dataAdmissao: admissao, turno, inicioExpediente: inicio, fimExpediente: fim,
+            nome, polo, dataAdmissao: admissao, turno, 
+            inicioExpediente: inicio, fimExpediente: fim,
             departamento: 0, subEtapa: 0,
             dataCriacao: new Date().toISOString(),
             ultimaMovimentacao: new Date().toISOString()
         };
         await addEmployeeToFirestore(newEmployee);
+        showTemporaryMessage('Funcionário adicionado!', 'success');
     }
-    employeeModal.classList.add('hidden');
+    employeeModal.style.display = 'none';
 });
 
 addBtn.addEventListener('click', () => openEmployeeModal());
-cancelModalBtn.addEventListener('click', () => employeeModal.classList.add('hidden'));
-modalClose?.addEventListener('click', () => employeeModal.classList.add('hidden'));
+cancelModalBtn.addEventListener('click', () => employeeModal.style.display = 'none');
+modalCloseBtn?.addEventListener('click', () => employeeModal.style.display = 'none');
 
+// ========== CONFIRMAÇÃO ==========
 function showConfirm(msg, onConfirm) {
     confirmMessageSpan.innerText = msg;
-    confirmModal.classList.remove('hidden');
+    confirmModal.style.display = 'flex';
     currentConfirmCallback = onConfirm;
 }
+
 confirmYesBtn.addEventListener('click', () => {
-    confirmModal.classList.add('hidden');
+    confirmModal.style.display = 'none';
     if (currentConfirmCallback) currentConfirmCallback();
     currentConfirmCallback = null;
 });
+
 confirmNoBtn.addEventListener('click', () => {
-    confirmModal.classList.add('hidden');
+    confirmModal.style.display = 'none';
     currentConfirmCallback = null;
 });
 
-function initTheme() {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'light') {
-        document.body.classList.add('light-mode');
-        themeToggle.innerHTML = '<i class="fas fa-sun"></i> Tema';
-    } else {
-        themeToggle.innerHTML = '<i class="fas fa-moon"></i> Tema';
-    }
-}
-themeToggle.addEventListener('click', () => {
-    document.body.classList.toggle('light-mode');
-    const isLight = document.body.classList.contains('light-mode');
-    localStorage.setItem('theme', isLight ? 'light' : 'dark');
-    themeToggle.innerHTML = isLight ? '<i class="fas fa-sun"></i> Tema' : '<i class="fas fa-moon"></i> Tema';
+window.addEventListener('click', (e) => {
+    if (e.target === confirmModal) confirmModal.style.display = 'none';
+    if (e.target === employeeModal) employeeModal.style.display = 'none';
 });
 
+// ========== EXPORTAR EXCEL ==========
+document.getElementById('exportExcelBtn').addEventListener('click', () => {
+    try {
+        let allFilteredEmployees = [];
+        
+        for (let deptId = 0; deptId <= 2; deptId++) {
+            const searchInput = document.querySelector(`.dept-search-input[data-dept="${deptId}"]`);
+            const sortSelect = document.querySelector(`.dept-sort-select[data-dept="${deptId}"]`);
+            const searchTerm = searchInput ? searchInput.value : '';
+            const sortType = sortSelect ? sortSelect.value : 'admissao_desc';
+            const filtered = getFilteredAndSorted(deptId, searchTerm, sortType);
+            allFilteredEmployees.push(...filtered);
+        }
+        
+        if (allFilteredEmployees.length === 0) {
+            alert("Nenhum funcionário para exportar.");
+            return;
+        }
+        
+        const worksheetData = [
+            ["Nome", "Etapa (progresso)", "Polo", "Data Admissão", "Turno", "Início Expediente", "Fim Expediente", "Data Criação", "Última Movimentação"]
+        ];
+        
+        for (let i = 0; i < allFilteredEmployees.length; i++) {
+            const emp = allFilteredEmployees[i];
+            const deptName = departments[emp.departamento]?.name || "Desconhecido";
+            const stageName = departments[emp.departamento]?.stages[emp.subEtapa] || "Etapa inválida";
+            let globalStage = 0;
+            if (emp.departamento === 0) globalStage = emp.subEtapa + 1;
+            else if (emp.departamento === 1) globalStage = 4 + emp.subEtapa + 1;
+            else globalStage = 10 + emp.subEtapa + 1;
+            const stageWithProgress = `${deptName} - ${stageName} (${globalStage}/12)`;
+            
+            worksheetData.push([
+                emp.nome || "",
+                stageWithProgress,
+                emp.polo || "",
+                emp.dataAdmissao || "",
+                emp.turno || "",
+                emp.inicioExpediente || "",
+                emp.fimExpediente || "",
+                formatDateTime(emp.dataCriacao),
+                formatDateTime(emp.ultimaMovimentacao)
+            ]);
+        }
+        
+        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Customiza Kanban");
+        
+        worksheet['!cols'] = [
+            {wch:25}, {wch:35}, {wch:15}, {wch:12}, {wch:10}, {wch:12}, {wch:12}, {wch:18}, {wch:18}
+        ];
+        
+        const fileName = `customiza_kanban_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+        showTemporaryMessage('Exportação concluída!', 'success');
+    } catch (error) {
+        console.error("Erro ao exportar Excel:", error);
+        alert("Falha ao gerar o arquivo Excel.");
+    }
+});
+
+// ========== TEMA ==========
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    const themeIcon = themeToggle?.querySelector('i');
+    const fabIcon = themeToggleFab?.querySelector('i');
+    
+    if (savedTheme === 'dark') {
+        document.body.classList.add('dark');
+        if (themeIcon) {
+            themeIcon.classList.remove('bx-moon');
+            themeIcon.classList.add('bx-sun');
+        }
+        if (fabIcon) {
+            fabIcon.classList.remove('bx-moon');
+            fabIcon.classList.add('bx-sun');
+        }
+        if (themeToggle) themeToggle.innerHTML = '<i class="bx bx-sun"></i> Tema';
+    } else {
+        document.body.classList.remove('dark');
+        if (themeIcon) {
+            themeIcon.classList.remove('bx-sun');
+            themeIcon.classList.add('bx-moon');
+        }
+        if (fabIcon) {
+            fabIcon.classList.remove('bx-sun');
+            fabIcon.classList.add('bx-moon');
+        }
+        if (themeToggle) themeToggle.innerHTML = '<i class="bx bx-moon"></i> Tema';
+    }
+}
+
+function toggleTheme() {
+    document.body.classList.toggle('dark');
+    const isDark = document.body.classList.contains('dark');
+    const themeIcon = themeToggle?.querySelector('i');
+    const fabIcon = themeToggleFab?.querySelector('i');
+    
+    if (isDark) {
+        if (themeIcon) {
+            themeIcon.classList.remove('bx-moon');
+            themeIcon.classList.add('bx-sun');
+        }
+        if (fabIcon) {
+            fabIcon.classList.remove('bx-moon');
+            fabIcon.classList.add('bx-sun');
+        }
+        if (themeToggle) themeToggle.innerHTML = '<i class="bx bx-sun"></i> Tema';
+        localStorage.setItem('theme', 'dark');
+    } else {
+        if (themeIcon) {
+            themeIcon.classList.remove('bx-sun');
+            themeIcon.classList.add('bx-moon');
+        }
+        if (fabIcon) {
+            fabIcon.classList.remove('bx-sun');
+            fabIcon.classList.add('bx-moon');
+        }
+        if (themeToggle) themeToggle.innerHTML = '<i class="bx bx-moon"></i> Tema';
+        localStorage.setItem('theme', 'light');
+    }
+}
+
+themeToggle?.addEventListener('click', toggleTheme);
+themeToggleFab?.addEventListener('click', toggleTheme);
+
+// ========== AUTH ==========
 function checkAuth() {
     setLoading(true);
     onAuthStateChanged(auth, (user) => {
@@ -543,10 +821,8 @@ function checkAuth() {
             window.location.href = 'index.html';
         } else {
             isViewOnly = (user.email === "ctz@promptservicos.com.br");
-            if (isViewOnly) {
-                addBtn.style.display = 'none';
-            } else {
-                addBtn.style.display = 'flex';
+            if (addBtn) {
+                addBtn.style.display = isViewOnly ? 'none' : 'flex';
             }
             renderBoard();
             subscribeToEmployees();
@@ -561,77 +837,6 @@ logoutBtn.addEventListener('click', async () => {
     window.location.href = 'index.html';
 });
 
-function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;');
-}
-
-// ---------- Exportar para Excel (com Nome primeiro, Etapa com progresso total 11, sem Departamento) ----------
-document.getElementById('exportExcelBtn').addEventListener('click', () => {
-    try {
-        let allFilteredEmployees = [];
-
-        for (let deptId = 0; deptId <= 2; deptId++) {
-            const searchInput = document.querySelector(`.search-input[data-dept="${deptId}"]`);
-            const sortSelect = document.querySelector(`.sort-select[data-dept="${deptId}"]`);
-            const searchTerm = searchInput ? searchInput.value : '';
-            const sortType = sortSelect ? sortSelect.value : 'admissao_desc';
-            const filtered = getFilteredAndSorted(deptId, searchTerm, sortType);
-            allFilteredEmployees.push(...filtered);
-        }
-
-        if (allFilteredEmployees.length === 0) {
-            alert("Nenhum funcionário para exportar.");
-            return;
-        }
-
-        // Cabeçalho: Nome, Etapa (progresso), Polo, Data Admissão, Turno, Início Expediente, Fim Expediente, Data Criação, Última Movimentação
-        const worksheetData = [
-            ["Nome", "Etapa (progresso)", "Polo", "Data Admissão", "Turno", "Início Expediente", "Fim Expediente", "Data Criação", "Última Movimentação"]
-        ];
-
-        allFilteredEmployees.forEach(emp => {
-            const deptName = departments[emp.departamento]?.name || "Desconhecido";
-            const stageName = departments[emp.departamento]?.stages[emp.subEtapa] || "Etapa inválida";
-            const globalStage = getGlobalStageNumber(emp.departamento, emp.subEtapa);
-            const stageWithProgress = `${stageName} (${globalStage}/12)`;
-
-            worksheetData.push([
-                emp.nome || "",
-                stageWithProgress,
-                emp.polo || "",
-                emp.dataAdmissao || "",
-                emp.turno || "",
-                emp.inicioExpediente || "",
-                emp.fimExpediente || "",
-                formatDateTime(emp.dataCriacao),
-                formatDateTime(emp.ultimaMovimentacao)
-            ]);
-        });
-
-        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Kanban");
-
-        worksheet['!cols'] = [
-            {wch:25},  // Nome
-            {wch:30},  // Etapa (progresso)
-            {wch:15},  // Polo
-            {wch:12},  // Data Admissão
-            {wch:10},  // Turno
-            {wch:12},  // Início Expediente
-            {wch:12},  // Fim Expediente
-            {wch:18},  // Data Criação
-            {wch:18}   // Última Movimentação
-        ];
-
-        const fileName = `kanban_export_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`;
-        XLSX.writeFile(workbook, fileName);
-    } catch (error) {
-        console.error("Erro ao exportar Excel:", error);
-        alert("Falha ao gerar o arquivo Excel. Verifique o console para mais detalhes.");
-    }
-});
-
+// ========== INICIALIZAÇÃO ==========
 initTheme();
 checkAuth();

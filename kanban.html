@@ -4,67 +4,98 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Customiza Kanban | Funcionários</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    
+    <link rel="icon" type="image/png" href="icon.png">
+
+    <!-- Boxicons CDN -->
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    
+    <!-- Font Awesome CDN -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
     <link rel="stylesheet" href="kanban.css">
 </head>
 <body>
     <div class="app-container">
+        <!-- Header moderno -->
         <header class="kanban-header">
             <div class="logo-area">
-                <i class="fas fa-columns"></i>
+                <i class='bx bxs-grid-alt'></i>
                 <h1>Customiza Kanban</h1>
             </div>
             <div class="header-actions">
-                <button id="addEmployeeBtn" class="btn-icon-text"><i class="fas fa-plus"></i> Novo Funcionário</button>
-                <button id="exportExcelBtn" class="btn-icon-text"><i class="fas fa-file-excel"></i> Exportar Excel</button>
-                <button id="themeToggle" class="btn-icon-text"><i class="fas fa-moon"></i> Tema</button>
-                <button id="logoutKanbanBtn" class="btn-icon-text"><i class="fas fa-sign-out-alt"></i> Sair</button>
+                <button id="addEmployeeBtn" class="btn-primary-glass">
+                    <i class='bx bx-plus-circle'></i>
+                    Novo Funcionário
+                </button>
+                <button id="exportExcelBtn" class="btn-secondary-glass">
+                    <i class='bx bxs-file-export'></i>
+                    Exportar
+                </button>
+                <button id="themeToggle" class="btn-secondary-glass">
+                    <i class='bx bx-moon'></i>
+                    Tema
+                </button>
+                <button id="logoutKanbanBtn" class="btn-secondary-glass">
+                    <i class='bx bx-arrow-back'></i>
+                    Sair
+                </button>
             </div>
         </header>
 
-        <!-- Board horizontal global único -->
+        <!-- Kanban Board -->
         <div class="kanban-board" id="kanbanBoard"></div>
     </div>
 
-    <!-- Modal de adicionar/editar funcionário (sem CPF) -->
-    <div id="employeeModal" class="modal hidden">
-        <div class="modal-card">
+    <!-- Botão de alternar tema (canto inferior direito) -->
+    <button id="themeToggleFab" class="theme-toggle-bottom" aria-label="Alternar tema">
+        <i class='bx bx-moon'></i>
+    </button>
+
+    <!-- Modal de adicionar/editar funcionário -->
+    <div id="employeeModal" class="modal" style="display: none;">
+        <div class="modal-content">
             <div class="modal-header">
-                <h3 id="modalTitle">Adicionar funcionário</h3>
-                <button class="modal-close"><i class="fas fa-times"></i></button>
+                <h3 id="modalTitle">Novo Funcionário</h3>
+                <button class="modal-close-btn"><i class='bx bx-x'></i></button>
             </div>
             <form id="employeeForm">
-                <div class="field">
-                    <label>Nome completo</label>
-                    <input type="text" id="empNome" required class="input-light">
+                <div class="input-box">
+                    <i class='bx bx-user'></i>
+                    <input type="text" id="empNome" required placeholder="Nome completo *">
                 </div>
-                <div class="field">
-                    <label>Polo</label>
-                    <input type="text" id="empPolo" class="input-light" placeholder="Ex: Polo Industrial">
+                <div class="input-box">
+                    <i class='bx bx-buildings'></i>
+                    <input type="text" id="empPolo" placeholder="Polo (ex: Polo Industrial)">
                 </div>
-                <div class="field">
-                    <label>Data de admissão</label>
-                    <input type="date" id="empAdmissao" class="input-light">
+                <div class="input-box">
+                    <i class='bx bx-calendar'></i>
+                    <input type="date" id="empAdmissao" placeholder="Data de admissão">
                 </div>
-                <div class="field">
-                    <label>Turno</label>
-                    <select id="empTurno" class="input-light">
-                        <option value="">Selecione</option>
+                <div class="input-box">
+                    <i class='bx bx-time-five'></i>
+                    <select id="empTurno" class="select-input">
+                        <option value="">Selecione o turno</option>
                         <option value="Manhã">Manhã</option>
                         <option value="Tarde">Tarde</option>
                         <option value="Noite">Noite</option>
                         <option value="Integral">Integral</option>
                     </select>
                 </div>
-                <div class="field">
-                    <label>Início do expediente</label>
-                    <input type="time" id="empInicio" class="input-light">
+                <div class="input-row">
+                    <div class="input-box half">
+                        <i class='bx bx-time'></i>
+                        <input type="time" id="empInicio" placeholder="Início expediente">
+                    </div>
+                    <div class="input-box half">
+                        <i class='bx bx-time-five'></i>
+                        <input type="time" id="empFim" placeholder="Término expediente">
+                    </div>
                 </div>
-                <div class="field">
-                    <label>Término do expediente</label>
-                    <input type="time" id="empFim" class="input-light">
-                </div>
+
                 <input type="hidden" id="editId" value="">
                 <div class="modal-actions">
                     <button type="button" id="cancelModalBtn" class="btn-secondary">Cancelar</button>
@@ -75,9 +106,11 @@
     </div>
 
     <!-- Modal de confirmação -->
-    <div id="confirmModal" class="modal hidden">
-        <div class="confirm-card">
-            <i class="fas fa-question-circle confirm-icon"></i>
+    <div id="confirmModal" class="modal" style="display: none;">
+        <div class="modal-content confirm-modal">
+            <div class="confirm-icon">
+                <i class='bx bx-question-mark'></i>
+            </div>
             <p id="confirmMessage">Confirmar ação?</p>
             <div class="confirm-actions">
                 <button id="confirmNo" class="btn-secondary">Não</button>
@@ -86,12 +119,12 @@
         </div>
     </div>
 
+    <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay hidden">
         <div class="spinner"></div>
         <div class="loading-text">Carregando...</div>
     </div>
 
-    <!-- Biblioteca SheetJS para exportar Excel -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <script type="module" src="kanban.js"></script>
 </body>
